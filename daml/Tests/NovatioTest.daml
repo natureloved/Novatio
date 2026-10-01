@@ -1,0 +1,137 @@
+module Tests.NovatioTest where
+
+import Daml.Script
+import DA.Date
+import DA.Time
+import DA.Optional (isNone)
+import Novatio
+
+-- Hoisted top-level constant avoids multi-line let indentation parse errors
+-- and uses standard comma-separated Daml record syntax
+invoiceLineItems : [LineItem]
+invoiceLineItems =
+  [ LineItem with itemCode = "MCU-901", description = "Flight Microcontroller", quantity = 1000.0, unitPrice = 75.0, totalPrice = 75000.0
+  , LineItem with itemCode = "PCB-404", description = "Radiation Shield Board", quantity = 500.0, unitPrice = 50.0, totalPrice = 25000.0
+  ]
+
+testNovatioCompleteLifecycle : Script ()
+testNovatioCompleteLifecycle = script do
+  -- 1. Allocate participant parties
+  bank <- allocateParty "Central_Reserve_Bank"
+  supplier <- allocateParty "Acme_Electronics"
+  buyer <- allocateParty "Global_Motors_OEM"
+  factorer <- allocateParty "Canton_Capital_Desk"
+  auditor <- allocateParty "Regulatory_Observer"
+  unauthorizedEve <- allocateParty "Competitor_Eve"
+
+  now <- getTime
+  let invoiceDueDate = addRelTime now (days 90)
+
+  -- 2. Bank issues Cash assets to Buyer and Factorer
+  factorerInitialCashCid <- submit bank do
+    createCmd Cash with issuer = bank, holder = factorer, amount = 100000.0
+
+  buyerInitialCashCid <- submit bank do
+    createCmd Cash with issuer = bank, holder = buyer, amount = 100000.0
+
+  -- 3. Buyer initializes its NovationRegistry (Single-Writer authority anchor)
+  registryCid <- submit buyer do
+    createCmd NovationRegistry with
+      buyer
+      registeredInvoices = []
+
+  -- 4. Supplier and Buyer establish private CommercialInvoice with line items
+  -- Note: In Canton 3.x, submitMulti is equivalent to submit (actAs [supplier, buyer])
+  commercialInvoiceCid <- submitMulti [supplier, buyer] [] do
+    createCmd CommercialInvoice with
+      supplier
+      buyer
+      invoiceNumber = "INV-2026-001"
+      amount = 100000.0
+      dueDate = invoiceDueDate
+      lineItems = invoiceLineItems
+
+  -- 5. Privacy Verification: Factorer CANNOT query or view CommercialInvoice (Decomposition)
+  factorerCommercialQuery <- queryContractId @CommercialInvoice factorer commercialInvoiceCid
+  assertMsg "Factorer must not see the commercial invoice" (isNone factorerCommercialQuery)
+
+  -- 6. Buyer registers invoice and creates FactoringOffer
+  (updatedRegistryCid, offerCid) <- submit buyer do
+    exerciseCmd registryCid RegisterAndOfferFactoring with
+      commercialInvoiceCid
+      factorer
+      advanceRate = 0.85
+      discountFee = 2500.0
+      auditor
+
+  -- 7. Invariant Test 1: Single-Writer Dedup (Attempting to re-register same invoice MUST fail)
+  submitMustFail buyer do
+    exerciseCmd updatedRegistryCid RegisterAndOfferFactoring with
+      commercialInvoiceCid
+      factorer
+      advanceRate = 0.85
+      discountFee = 2500.0
+      auditor
+
+  -- 8. Supplier accepts FactoringOffer, verifying invoice commitment hash and establishing co-signed FinanceableReceivable
+  receivableCid <- submit supplier do
+    exerciseCmd offerCid AcceptOffer with commercialInvoiceCid
+
+  -- 9. Invariant Test 2: Visibility Failure (Unauthorized Eve cannot see or exercise receivable)
+  submitMustFail unauthorizedEve do
+    exerciseCmd receivableCid AcceptFactoring with factorerCashCid = factorerInitialCashCid
+
+  -- 10. Invariant Test 3: Authorization Failure (Supplier cannot exercise factorer's choice)
+  submitMustFail supplier do
+    exerciseCmd receivableCid AcceptFactoring with factorerCashCid = factorerInitialCashCid
+
+  -- 11. Invariant Test 4: Underfunded DvP Reversion (Transaction reverts if cash insufficient)
+  underfundedCashCid <- submit bank do
+    createCmd Cash with issuer = bank, holder = factorer, amount = 10000.0
+  submitMustFail factorer do
+    exerciseCmd receivableCid AcceptFactoring with factorerCashCid = underfundedCashCid
+
+  -- 12. Atomic DvP Advance: Factorer pays $85,000 cash advance to Supplier; title novates
+  (novatedCid, supplierAdvanceCashCid) <- submit factorer do
+    exerciseCmd receivableCid AcceptFactoring with factorerCashCid = factorerInitialCashCid
+
+  -- Assert exact advance economics on-ledger:
+  Some supplierCash1 <- queryContractId @Cash supplier supplierAdvanceCashCid
+  assertMsg "Supplier must receive exactly $85,000 advance" (supplierCash1.amount == 85000.0)
+
+  -- 13. Auditor queries active audit report (Returns scoped report, zero line items)
+  activeReport <- submit auditor do
+    exerciseCmd novatedCid QueryActiveAudit
+  assert (activeReport.debtor == buyer)
+  assert (activeReport.verifiedAmount == 100000.0)
+  assert (not activeReport.isSettled)
+
+  -- 14. Settlement Leg 1: Buyer settles $100,000 full face value to Factorer out of buyer cash
+  (settledCid, factorerSettlementCashCid) <- submit buyer do
+    exerciseCmd novatedCid SettleReceivable with buyerCashCid = buyerInitialCashCid
+
+  -- 15. Settlement Leg 2: Factorer remits ($15,000 reserve - $2,500 fee) = $12,500 to Supplier
+  (finalSettledCid, supplierRemittanceCashCid) <- submit factorer do
+    exerciseCmd settledCid RemitSupplier with factorerCashCid = factorerSettlementCashCid
+
+  -- Assert exact remittance economics on-ledger:
+  Some supplierCash2 <- queryContractId @Cash supplier supplierRemittanceCashCid
+  assertMsg "Supplier remittance must equal $12,500" (supplierCash2.amount == 12500.0)
+
+  -- Total net supplier received = $85,000 + $12,500 = $97,500 (Effective financing fee: 2.50%)
+
+  -- 16. Auditor queries settled audit report (Proves audit right survives settlement)
+  settledReport <- submit auditor do
+    exerciseCmd finalSettledCid QuerySettledAudit
+  assert (settledReport.isSettled)
+  assert (settledReport.verifiedAmount == 100000.0)
+
+  -- 17. Invariant Test 5: Anti-Fraud Invariant (Double remittance fails specifically on business guard)
+  -- Tightened probe: Provide fresh spendable cash to prove revert is from `not remitted` guard,
+  -- not an unactive cash contract!
+  freshFactorerCash <- submit bank do
+    createCmd Cash with issuer = bank, holder = factorer, amount = 50000.0
+  submitMustFail factorer do
+    exerciseCmd finalSettledCid RemitSupplier with factorerCashCid = freshFactorerCash
+
+  return ()

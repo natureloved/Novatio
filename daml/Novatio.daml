@@ -1,0 +1,307 @@
+module Novatio where
+
+import DA.Text (sha256)
+
+-- | Digital Cash Asset Template (Standard DvP settlement leg)
+-- Minimal cash model: Issuer is sole signatory, so holder-driven transfers
+-- are authorized under the issuer's initial issuance mandate.
+template Cash
+  with
+    issuer : Party
+    holder : Party
+    amount : Decimal
+  where
+    signatory issuer
+    observer holder
+    ensure amount >= 0.0
+
+    choice Transfer : ContractId Cash
+      with
+        newHolder : Party
+        transferAmount : Decimal
+      controller holder
+      do
+        assertMsg "Transfer amount must be positive" (transferAmount > 0.0)
+        assertMsg "Insufficient cash balance" (transferAmount <= amount)
+        newCid <- create this with holder = newHolder, amount = transferAmount
+        if transferAmount < amount
+          then do
+            _ <- create this with amount = amount - transferAmount
+            return newCid
+          else return newCid
+
+-- | Detailed commercial line items (visible strictly to Buyer and Supplier)
+data LineItem = LineItem
+  with
+    itemCode : Text
+    description : Text
+    quantity : Decimal
+    unitPrice : Decimal
+    totalPrice : Decimal
+  deriving (Eq, Show)
+
+-- | Audit Report payload returned by non-consuming choices
+data AuditReport = AuditReport
+  with
+    debtor : Party
+    creditor : Party
+    invoiceId : Text
+    verifiedAmount : Decimal
+    commitmentHash : Text
+    isSettled : Bool
+  deriving (Eq, Show)
+
+-- | 1. Private Commercial Invoice (Supplier + Buyer ONLY)
+-- Carries confidential product line-items. Factorer NEVER receives this contract.
+template CommercialInvoice
+  with
+    supplier : Party
+    buyer : Party
+    invoiceNumber : Text
+    amount : Decimal
+    dueDate : Time
+    lineItems : [LineItem]
+  where
+    signatory supplier, buyer
+    ensure amount > 0.0 && sum (map (\i -> i.totalPrice) lineItems) == amount
+
+-- | 2. Long-Lived Buyer Novation Registry
+-- Solves duplicate financing via single-writer authorization and contract serialization.
+template NovationRegistry
+  with
+    buyer : Party
+    registeredInvoices : [Text]  -- Active set of processed invoice numbers
+  where
+    signatory buyer
+
+    -- Consuming choice: Fetches CommercialInvoice, verifies not in active set,
+    -- derives hash/terms directly from attested invoice, and emits FactoringOffer.
+    choice RegisterAndOfferFactoring : (ContractId NovationRegistry, ContractId FactoringOffer)
+      with
+        commercialInvoiceCid : ContractId CommercialInvoice
+        factorer : Party
+        advanceRate : Decimal   -- e.g. 0.85 (85%)
+        discountFee : Decimal   -- e.g. 2500.0 ($2,500 on $100k)
+        auditor : Party
+      controller buyer
+      do
+        invoice <- fetch commercialInvoiceCid
+        assertMsg "Buyer must match invoice debtor" (invoice.buyer == buyer)
+        assertMsg "Invoice already registered or financed" (invoice.invoiceNumber `notElem` registeredInvoices)
+        assertMsg "Advance rate must be between 50% and 95%" (advanceRate >= 0.50 && advanceRate <= 0.95)
+        assertMsg "Discount fee must be positive and less than advance" (discountFee > 0.0 && discountFee < invoice.amount * advanceRate)
+
+        let derivedHash = sha256 (invoice.invoiceNumber <> show invoice.amount <> show invoice.dueDate)
+        newRegistryCid <- create this with registeredInvoices = invoice.invoiceNumber :: registeredInvoices
+        offerCid <- create FactoringOffer with
+          buyer
+          supplier = invoice.supplier
+          factorer
+          invoiceNumber = invoice.invoiceNumber
+          amount = invoice.amount
+          dueDate = invoice.dueDate
+          invoiceHash = derivedHash
+          advanceRate
+          discountFee
+          auditor
+        return (newRegistryCid, offerCid)
+
+-- | 3. Factoring Offer (Awaiting Supplier Acceptance to establish multi-party authority)
+-- Fixes Blocker A: Buyer signs the offer; Supplier accepts to co-sign FinanceableReceivable.
+-- Supplier re-derives and asserts cryptographic commitment hash against CommercialInvoice.
+template FactoringOffer
+  with
+    buyer : Party
+    supplier : Party
+    factorer : Party
+    invoiceNumber : Text
+    amount : Decimal
+    dueDate : Time
+    invoiceHash : Text
+    advanceRate : Decimal
+    discountFee : Decimal
+    auditor : Party
+  where
+    signatory buyer
+    observer supplier, factorer, auditor
+
+    -- Supplier accepts terms, verifying commitment hash before co-signing FinanceableReceivable
+    choice AcceptOffer : ContractId FinanceableReceivable
+      with
+        commercialInvoiceCid : ContractId CommercialInvoice
+      controller supplier
+      do
+        invoice <- fetch commercialInvoiceCid
+        assertMsg "Supplier must match invoice creditor" (invoice.supplier == supplier)
+        assertMsg "Invoice number mismatch" (invoice.invoiceNumber == invoiceNumber)
+        assertMsg "Invoice amount mismatch" (invoice.amount == amount)
+        let recomputedHash = sha256 (invoice.invoiceNumber <> show invoice.amount <> show invoice.dueDate)
+        assertMsg "Cryptographic invoice commitment mismatch" (recomputedHash == invoiceHash)
+
+        create FinanceableReceivable with
+          buyer
+          supplier
+          factorer
+          invoiceNumber
+          amount
+          dueDate
+          invoiceHash
+          advanceRate
+          discountFee
+          auditor
+
+    choice RejectOffer : ()
+      controller supplier
+      do return ()
+
+-- | 4. Financeable Receivable (Decomposed Contract for Factorer)
+-- Visibility scope: Buyer, Supplier, Factorer, Auditor.
+-- Notice: NO line-items exist on this template! Pure need-to-know contract decomposition.
+template FinanceableReceivable
+  with
+    buyer : Party
+    supplier : Party
+    factorer : Party
+    invoiceNumber : Text
+    amount : Decimal
+    dueDate : Time
+    invoiceHash : Text
+    advanceRate : Decimal
+    discountFee : Decimal
+    auditor : Party
+  where
+    signatory buyer, supplier
+    observer factorer, auditor
+
+    -- Atomic DvP: Factorer transfers cash advance from factorerCashCid to supplier
+    -- and title novates in ONE atomic choice.
+    choice AcceptFactoring : (ContractId NovatedReceivable, ContractId Cash)
+      with
+        factorerCashCid : ContractId Cash
+      controller factorer
+      do
+        let advanceAmount = amount * advanceRate
+        let reserveAmount = amount - advanceAmount
+
+        -- Atomic cash leg: factorer transfers advance to supplier
+        supplierCashCid <- exercise factorerCashCid Transfer with
+          newHolder = supplier
+          transferAmount = advanceAmount
+
+        novatedCid <- create NovatedReceivable with
+          buyer
+          supplier
+          factorer
+          invoiceNumber
+          totalAmount = amount
+          advanceAmount
+          reserveAmount
+          discountFee
+          dueDate
+          invoiceHash
+          auditor
+
+        return (novatedCid, supplierCashCid)
+
+-- | 5. Novated Receivable (Factorer is now the sole legal creditor)
+template NovatedReceivable
+  with
+    buyer : Party
+    supplier : Party
+    factorer : Party
+    invoiceNumber : Text
+    totalAmount : Decimal
+    advanceAmount : Decimal
+    reserveAmount : Decimal
+    discountFee : Decimal
+    dueDate : Time
+    invoiceHash : Text
+    auditor : Party
+  where
+    signatory buyer, factorer
+    observer supplier, auditor
+
+    -- Settlement Leg 1: Buyer pays full face value out of buyerCashCid to factorer.
+    -- Fixes Blocker B: SettledObligation requires only {buyer, factorer} authority.
+    choice SettleReceivable : (ContractId SettledObligation, ContractId Cash)
+      with
+        buyerCashCid : ContractId Cash
+      controller buyer
+      do
+        factorerSettlementCashCid <- exercise buyerCashCid Transfer with
+          newHolder = factorer
+          transferAmount = totalAmount
+
+        settledCid <- create SettledObligation with
+          buyer
+          supplier
+          factorer
+          invoiceNumber
+          totalAmount
+          reserveAmount
+          discountFee
+          invoiceHash
+          remitted = False
+          auditor
+
+        return (settledCid, factorerSettlementCashCid)
+
+    -- Scoped Audit Choice on Active Receivable
+    nonconsuming choice QueryActiveAudit : AuditReport
+      controller auditor
+      do
+        return AuditReport with
+          debtor = buyer
+          creditor = factorer
+          invoiceId = invoiceNumber
+          verifiedAmount = totalAmount
+          commitmentHash = invoiceHash
+          isSettled = False
+
+-- | 6. Settled Obligation (Survives for permanent compliance audit trail)
+template SettledObligation
+  with
+    buyer : Party
+    supplier : Party
+    factorer : Party
+    invoiceNumber : Text
+    totalAmount : Decimal
+    reserveAmount : Decimal
+    discountFee : Decimal
+    invoiceHash : Text
+    remitted : Bool
+    auditor : Party
+  where
+    signatory buyer, factorer
+    observer supplier, auditor
+
+    -- Settlement Leg 2: Factorer remits (reserveAmount - discountFee) out of factorerCashCid to supplier.
+    -- Driven by factorer, avoiding divulgence restrictions.
+    choice RemitSupplier : (ContractId SettledObligation, ContractId Cash)
+      with
+        factorerCashCid : ContractId Cash
+      controller factorer
+      do
+        assertMsg "Remittance already processed" (not remitted)
+        let remittanceAmount = reserveAmount - discountFee
+
+        supplierRemittanceCid <- exercise factorerCashCid Transfer with
+          newHolder = supplier
+          transferAmount = remittanceAmount
+
+        -- Re-create settled record with remitted = True so audit choices survive indefinitely
+        updatedSettledCid <- create this with remitted = True
+        return (updatedSettledCid, supplierRemittanceCid)
+
+    -- Scoped Audit Choice on Settled Record (Survives post-settlement)
+    -- Distinct choice name avoids "Multiple declarations" compilation error
+    nonconsuming choice QuerySettledAudit : AuditReport
+      controller auditor
+      do
+        return AuditReport with
+          debtor = buyer
+          creditor = factorer
+          invoiceId = invoiceNumber
+          verifiedAmount = totalAmount
+          commitmentHash = invoiceHash
+          isSettled = True
