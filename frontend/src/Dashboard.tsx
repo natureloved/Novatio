@@ -1345,7 +1345,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                   ISO 20022 pacs.008.001.10 XML Export
                 </h3>
                 <span className="mono" style={{ fontSize: '11px', color: 'var(--ink-mute)' }}>
-                  Financial Institution Customer Credit Transfer — Leg 1 Full Settlement
+                  Financial Institution Customer Credit Transfer: Leg 1 Full Settlement
                 </span>
               </div>
               <button className="btn-audit" onClick={() => setXmlModalContent(null)}>✕</button>

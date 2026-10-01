@@ -127,7 +127,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
             <span className="eyebrow">Institutional Trade Finance · Canton Network</span>
             <h1 className="serif">Private receivables, <em>publicly verifiable</em> settlement.</h1>
             <p className="lede">
-              Novatio is a Real-World Asset protocol built natively on Canton with Daml — giving suppliers immediate liquidity without exposing line items or margins, eliminating double-financing, and removing counterparty default risk.
+              Novatio is a Real-World Asset protocol built natively on Canton with Daml, giving suppliers immediate liquidity without exposing line items or margins, eliminating double-financing, and removing counterparty default risk.
             </p>
             <div className="hero-actions">
               <button onClick={onLaunchConsole} className="cta-btn">
@@ -167,7 +167,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 Three failures that keep trade finance <em style={{ fontStyle: 'italic', color: 'var(--gold)' }}>manual, opaque, and risky.</em>
               </h2>
             </div>
-            <p>The $3 Trillion global trade finance gap is not a capital problem — it is a data-confidentiality and verification problem. Novatio resolves all three at the protocol layer.</p>
+            <p>The $3 Trillion global trade finance gap is not a capital problem, it is a data-confidentiality and verification problem. Novatio resolves all three at the protocol layer.</p>
           </div>
 
           <div className="problems">
@@ -175,13 +175,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
               <div className="num">01</div>
               <span className="x">✕</span>
               <h3>NDA-leaking disclosures</h3>
-              <p>Traditional factoring forces suppliers to expose line items, wholesale margins, and customer lists to financiers — breaching corporate NDAs and destroying competitive moats.</p>
+              <p>Traditional factoring forces suppliers to expose line items, wholesale margins, and customer lists to financiers, breaching corporate NDAs and destroying competitive moats.</p>
             </div>
             <div className="problem">
               <div className="num">02</div>
               <span className="x">✕</span>
               <h3>Double-financing fraud</h3>
-              <p>The exact same receivable is pledged to multiple lenders across siloed ledgers (Greensill Capital pattern). Detection occurs only after default — with losses borne by the factorer.</p>
+              <p>The exact same receivable is pledged to multiple lenders across siloed ledgers (Greensill Capital pattern). Detection occurs only after default, with losses borne by the factorer.</p>
             </div>
             <div className="problem">
               <div className="num">03</div>
@@ -203,7 +203,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 Six primitives, enforced by <em style={{ fontStyle: 'italic', color: 'var(--gold)' }}>Daml on Canton.</em>
               </h2>
             </div>
-            <p>Each capability is a deterministic, contract-level guarantee — not an operational promise. Privacy is scoped; verification is cryptographic; settlement is atomic.</p>
+            <p>Each capability is a deterministic, contract-level guarantee, not an operational promise. Privacy is scoped; verification is cryptographic; settlement is atomic.</p>
           </div>
 
           <div className="features">
@@ -215,7 +215,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>Contract decomposition</h3>
-              <p>Invoices are split into discrete, independently financeable obligations — line items and margins stay private to the supplier while obligations are verifiable to the factorer.</p>
+              <p>Invoices are split into discrete, independently financeable obligations: line items and margins stay private to the supplier while obligations are verifiable to the factorer.</p>
               <span className="tag">Privacy-preserving</span>
             </div>
             <div className="feature">
@@ -225,7 +225,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>Single-writer deduplication</h3>
-              <p>Canton's sub-partition model guarantees one authoritative writer per receivable via NovationRegistry. The same obligation cannot be pledged twice — by construction, not by audit.</p>
+              <p>Canton's sub-partition model guarantees one authoritative writer per receivable via NovationRegistry. The same obligation cannot be pledged twice: by construction, not by audit.</p>
               <span className="tag">Anti-fraud</span>
             </div>
             <div className="feature">
@@ -245,7 +245,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>Two-legged settlement</h3>
-              <p>Advance and maturity legs are modeled as coupled contracts with a shared settlement hash. Either both complete or neither does — removing principal gap risk.</p>
+              <p>Advance and maturity legs are modeled as coupled contracts with a shared settlement hash. Either both complete or neither does, removing principal gap risk.</p>
               <span className="tag">Risk removal</span>
             </div>
             <div className="feature">
@@ -255,7 +255,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>Scoped auditing</h3>
-              <p>Regulators and auditors receive cryptographically-scoped read access — only to fields they are entitled to see — without decrypting the full contract graph.</p>
+              <p>Regulators and auditors receive cryptographically-scoped read access, only to fields they are entitled to see, without decrypting the full contract graph.</p>
               <span className="tag">Compliance-grade</span>
             </div>
             <div className="feature">
@@ -265,7 +265,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>ISO 20022 native</h3>
-              <p>Every event emits pacs.008 messages directly — integrating with SWIFT, core banking, and corporate treasury systems without translation layers.</p>
+              <p>Every event emits pacs.008 messages directly, integrating with SWIFT, core banking, and corporate treasury systems without translation layers.</p>
               <span className="tag">Interoperable</span>
             </div>
           </div>
@@ -289,7 +289,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
             {/* Control panel */}
             <div className="fin-panel">
               <h3>Facility modeller</h3>
-              <p className="sub">Indicative returns — subject to underwriting and tenor.</p>
+              <p className="sub">Indicative returns, subject to underwriting and tenor.</p>
 
               <div className="preset">
                 <button 
@@ -440,7 +440,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                   <circle cx="12" cy="12" r="9"/><path d="M12 8 V12 M12 16 V16.01"/>
                 </svg>
                 <div style={{ fontSize: '13px', color: 'var(--ink-soft)' }}>
-                  <b style={{ color: 'var(--ink)' }}>Canton sub-partitions</b> ensure the receivable exists on exactly one ledger. Double-financing is structurally impossible — not merely detected.
+                  <b style={{ color: 'var(--ink)' }}>Canton sub-partitions</b> ensure the receivable exists on exactly one ledger. Double-financing is structurally impossible, not merely detected.
                 </div>
               </div>
             </div>
@@ -516,7 +516,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
         <div className="wrap">
           <div className="cta-block">
             <span className="eyebrow" style={{ color: 'var(--gold-soft)' }}>For institutions · banks · factors</span>
-            <h2 className="serif" style={{ marginTop: '16px' }}>Bring your receivables <em>on-chain</em> — without bringing your counterparties' data.</h2>
+            <h2 className="serif" style={{ marginTop: '16px' }}>Bring your receivables <em>on-chain</em> without bringing your counterparties' data.</h2>
             <p>Novatio is currently onboarding institutional factorers, corporate treasury teams, and regulated lending desks. Request a private briefing and facility sizing session.</p>
             <button onClick={onLaunchConsole} className="cta-btn">
               Explore Live Protocol Dashboard

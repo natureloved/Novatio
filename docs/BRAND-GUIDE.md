@@ -1,4 +1,4 @@
-# NOVATIO — Visual Identity & Brand System
+# NOVATIO: Visual Identity & Brand System
 
 > **Institutional Financial Infrastructure & Confidential RWA Factoring Protocol**  
 > *Built natively on Canton Network using Daml*

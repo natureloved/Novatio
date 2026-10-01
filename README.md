@@ -1,13 +1,13 @@
-# NOVATIO — Confidential RWA Supply Chain Factoring & Atomic DvP on Canton Network
+# NOVATIO: Confidential RWA Supply Chain Factoring & Atomic DvP on Canton Network
 
-> **HackCanton Season #3 — Track 1: Real-World Asset (RWA) & Business Workflows**  
+> **HackCanton Season #3: Track 1: Real-World Asset (RWA) & Business Workflows**  
 > *Production-grade institutional trade finance invoice factoring leveraging Daml contract decomposition, single-writer authorization deduplication, and atomic Delivery vs Payment (DvP) on the Canton Network.*
 
 ---
 
 ## 1. Executive Summary
 
-In commercial contract law, **novation** (*Latin: novatio*) is the formal legal doctrine where an existing contract is extinguished and replaced with a new obligation—specifically transferring the right to be paid from the original creditor (the supplier) to a new creditor (the factorer/bank) with the debtor's (the buyer's) explicit assent.
+In commercial contract law, **novation** (*Latin: novatio*) is the formal legal doctrine where an existing contract is extinguished and replaced with a new obligation, specifically transferring the right to be paid from the original creditor (the supplier) to a new creditor (the factorer/bank) with the debtor's (the buyer's) explicit assent.
 
 While supply chain accounts receivable factoring is a **$3 Trillion global market**, enterprise buyers and suppliers cannot tokenize or finance invoices on transparent public blockchains (Ethereum, Solana):
 1. **Commercial Confidentiality & NDAs:** Publicly broadcasting part numbers, unit prices, supplier discounts, and volumes violates commercial non-disclosure agreements and exposes proprietary supply-chain margins to competitors.

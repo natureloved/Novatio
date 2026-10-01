@@ -1,12 +1,12 @@
-# NOVATIO — 1-Page Business Brief (HackCanton Season #3)
+# NOVATIO: 1-Page Business Brief (HackCanton Season #3)
 
 ## 1. Executive Summary
-Novatio brings the $3 Trillion trade finance invoice factoring market to Canton Network. Enterprise suppliers waiting 60–90 days for payments cannot use public blockchains because exposing customer names, line-items, and negotiated prices violates enterprise NDAs and leaks trade secrets. Novatio uses Daml contract decomposition and atomic Delivery vs Payment (DvP) to let institutional lenders finance receivables in seconds with mathematical commercial confidentiality.
+Novatio brings the $3 Trillion trade finance invoice factoring market to Canton Network. Enterprise suppliers waiting 60-90 days for payments cannot use public blockchains because exposing customer names, line-items, and negotiated prices violates enterprise NDAs and leaks trade secrets. Novatio uses Daml contract decomposition and atomic Delivery vs Payment (DvP) to let institutional lenders finance receivables in seconds with mathematical commercial confidentiality.
 
 ## 2. Ideal Customer Profile (ICP)
-- **Primary Borrowers:** Mid-market automotive, aerospace, and electronics manufacturing suppliers ($10M–$150M revenue) operating on Net-60/Net-90 payment terms.
+- **Primary Borrowers:** Mid-market automotive, aerospace, and electronics manufacturing suppliers ($10M-$150M revenue) operating on Net-60/Net-90 payment terms.
 - **Enterprise Debtors:** Tier-1 OEM manufacturers (e.g. Boeing, General Motors, Siemens) who demand long payment windows but maintain prime credit ratings.
-- **Liquidity Providers:** Institutional private credit funds and corporate treasury desks seeking short-duration (30–90 day), high-yield asset-backed returns.
+- **Liquidity Providers:** Institutional private credit funds and corporate treasury desks seeking short-duration (30-90 day), high-yield asset-backed returns.
 
 ## 3. Revenue Model & Unit Economics (Who Pays?)
 - **Face Value:** $100,000.00 commercial invoice due in 90 days.
