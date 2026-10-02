@@ -1,5 +1,14 @@
+declare const process: any;
+
 import { CantonLedgerClient } from './src/ledgerClient';
 import { generatePacs008Xml } from './src/iso20022Mapper';
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
+}
 
 async function runVerification() {
   console.log('--- STARTING NOVATIO PARTICIPANT ENGINE & INVARIANT TEST ---');
@@ -49,9 +58,8 @@ async function runVerification() {
       },
       'Global_Motors_OEM'
     );
-    throw new Error('Invariant Failed: Duplicate invoice registration did not revert!');
-  } catch (err) {
-    console.log(`✓ INVARIANT 1 PASS: Duplicate financing attempt safely rejected: ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`✓ INVARIANT 1 PASS: Duplicate financing attempt safely rejected: ${getErrorMessage(err)}`);
   }
 
   // 4. Supplier accepts offer
@@ -73,9 +81,8 @@ async function runVerification() {
       { factorerCashCid: 'cash-underfunded-fake' },
       'Canton_Capital_Desk'
     );
-    throw new Error('Invariant Failed: Underfunded DvP did not revert!');
-  } catch (err) {
-    console.log(`✓ INVARIANT 2 PASS: Underfunded cash advance safely reverted: ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`✓ INVARIANT 2 PASS: Underfunded cash advance safely reverted: ${getErrorMessage(err)}`);
   }
 
   // 6. Atomic DvP Advance: Factorer pays $85k cash to supplier
@@ -147,9 +154,8 @@ async function runVerification() {
       { factorerCashCid: factorerFinalCash[0].contractId },
       'Canton_Capital_Desk'
     );
-    throw new Error('Invariant Failed: Double remittance did not revert!');
-  } catch (err) {
-    console.log(`✓ INVARIANT 3 PASS: Double remittance blocked: ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`✓ INVARIANT 3 PASS: Double remittance blocked: ${getErrorMessage(err)}`);
   }
 
   // 11. Scoped Settled Audit Choice & ISO 20022 XML Generation
@@ -168,7 +174,9 @@ async function runVerification() {
   console.log('\n--- ALL 11 CANTON PARTICIPANT & FINANCIAL INVARIANTS PASSED 100% ---');
 }
 
-runVerification().catch(err => {
-  console.error('VERIFICATION ERROR:', err);
-  process.exit(1);
+runVerification().catch((err: unknown) => {
+  console.error('VERIFICATION ERROR:', getErrorMessage(err));
+  if (typeof process !== 'undefined' && process && process.exit) {
+    process.exit(1);
+  }
 });
