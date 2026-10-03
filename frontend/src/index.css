@@ -1907,11 +1907,62 @@ footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 32px;
   position: sticky;
   top: 0;
   z-index: 20;
   backdrop-filter: blur(12px);
+}
+
+/* Mobile topbar. The row holds the menu toggle + breadcrumb + search + primary
+   action; none of them may be dropped, so it wraps and the search box shrinks
+   instead. Without `flex-wrap` the row stays one line and pushes the page
+   wider than the viewport. Base rule above stays put — it only needs the
+   wrap, min-width and height adjustments added below. */
+@media (max-width: 850px) {
+  .topbar {
+    height: auto;
+    min-height: 70px;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    padding: 12px 16px;
+    row-gap: 10px;
+  }
+
+  .topbar > * {
+    min-width: 0;
+  }
+
+  .breadcrumb {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 540px) {
+  .top-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-box {
+    width: 100%;
+  }
+
+  .top-actions .primary-button {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .breadcrumb {
@@ -2681,8 +2732,8 @@ footer {
 }
 
 @media (max-width: 540px) {
-  .topbar { height: 60px; padding: 0 16px; }
-  .search-box { width: 140px; }
+  /* No height override here: the topbar wraps on mobile (see the 850px block),
+     so a fixed height would clip the wrapped second row. */
   .metrics-dashboard { grid-template-columns: 1fr; }
   .page-heading { flex-direction: column; align-items: flex-start; gap: 14px; }
   .page-heading .primary-button { width: 100%; justify-content: center; }

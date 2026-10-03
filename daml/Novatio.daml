@@ -1,6 +1,7 @@
 module Novatio where
 
 import DA.Text (sha256)
+import DA.List ((\\))  -- set difference, used to release a settled invoice from the registry
 
 -- | Digital Cash Asset Template (Standard DvP settlement leg)
 -- Minimal cash model: Issuer is sole signatory, so holder-driven transfers
@@ -105,6 +106,32 @@ template NovationRegistry
           discountFee
           auditor
         return (newRegistryCid, offerCid)
+
+    -- | Releases a fully settled invoice from the registry.
+    --
+    -- `registeredInvoices` is append-only, so without this an invoice can never be
+    -- re-financed or restructured once registered — wrong for a real product, where a
+    -- corrected invoice or a partially paid obligation needs a new facility.
+    --
+    -- Release is gated on proof of settlement: the caller must hand over a
+    -- SettledObligation for this buyer, for an invoice currently in the registry,
+    -- with both settlement legs complete (`remitted = True`). At that point the
+    -- original debt is extinguished, so registering a replacement is legitimate
+    -- rather than a second pledge against the same obligation.
+    choice ReleaseSettledInvoice : ContractId NovationRegistry
+      with
+         settledCid : ContractId SettledObligation
+      controller buyer
+      do
+         settled <- fetch settledCid
+         assertMsg "Only the buyer's own settled obligation releases its registry entry"
+           (settled.buyer == buyer)
+         assertMsg "Remittance must complete before the invoice can be released"
+           settled.remitted
+         assertMsg "Invoice is not currently registered"
+           (settled.invoiceNumber `elem` registeredInvoices)
+         create this with
+           registeredInvoices = registeredInvoices \\ [settled.invoiceNumber]
 
 -- | 3. Factoring Offer (Awaiting Supplier Acceptance to establish multi-party authority)
 -- Fixes Blocker A: Buyer signs the offer; Supplier accepts to co-sign FinanceableReceivable.

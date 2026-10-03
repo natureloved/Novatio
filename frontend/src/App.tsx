@@ -1,10 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { CantonLedgerClient } from './ledgerClient';
+import { CantonLedgerClient, LedgerClientConfig } from './ledgerClient';
 import { LandingPage } from './LandingPage';
 import { Dashboard } from './Dashboard';
 import './index.css';
 
-const ledger = new CantonLedgerClient();
+/**
+ * Ledger wiring.
+ *
+ * The dashboard only talks to a real Canton Network node when VITE_LEDGER_URL
+ * points at one (e.g. `VITE_LEDGER_URL=http://localhost:7575 npm run dev`).
+ * With no URL — the default — the bundled participant-isolation engine serves
+ * state, and the UI labels itself as a local participant simulator rather than
+ * implying a live ledger. VITE_LEDGER_API_VERSION selects 'v1' or 'v2'.
+ */
+function buildLedgerConfig(): LedgerClientConfig {
+  const env = import.meta.env ?? {};
+  return {
+    jsonApiUrl: env.VITE_LEDGER_URL || undefined,
+    jsonApiVersion: (env.VITE_LEDGER_API_VERSION === 'v2' ? 'v2' : 'v1'),
+  };
+}
+
+const ledger = new CantonLedgerClient(buildLedgerConfig());
 
 interface ToastInfo {
   id: string;

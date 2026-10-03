@@ -28,6 +28,19 @@ export interface LedgerClientConfig {
   jwtTokens?: Record<string, string>; // Party -> Bearer Token
 }
 
+/**
+ * How the client obtained its data.
+ *
+ * 'canton'  — an HTTP request to a real Canton JSON API succeeded.
+ * 'local'   — no JSON API URL was configured, or every request failed, so the
+ *            bundled participant-isolation engine served the data.
+ *
+ * The dashboard renders this verbatim so an observer always knows whether they
+ * are looking at a live ledger or the local simulator. Nothing here is inferred
+ * or hidden: `connectionMode` is only ever 'canton' after a real HTTP response.
+ */
+export type ConnectionMode = 'canton' | 'local';
+
 export interface TransactionEvent {
   txId: string;
   timestamp: string;
@@ -46,9 +59,31 @@ export class CantonLedgerClient {
   private transactionHistory: TransactionEvent[] = [];
   private listeners: (() => void)[] = [];
 
+  /**
+   * Starts as 'local' and only flips to 'canton' once a real JSON API request
+   * has returned. Never inferred from configuration alone — see ConnectionMode.
+   */
+  private mode: ConnectionMode = 'local';
+  private lastRemoteFailure: string | null = null;
+
   constructor(config: LedgerClientConfig = {}) {
     this.config = { jsonApiVersion: 'v1', ...config };
     this.seedInitialParticipantState();
+  }
+
+  /** 'canton' only after a successful HTTP round-trip to a real ledger. */
+  public getConnectionMode(): ConnectionMode {
+    return this.mode;
+  }
+
+  /** Human-readable reason the client is serving local state, if it is. */
+  public getRemoteFailureReason(): string | null {
+    return this.lastRemoteFailure;
+  }
+
+  /** True when every read is served by the bundled isolation engine. */
+  public isLocalSimulation(): boolean {
+    return this.mode === 'local';
   }
 
   public subscribe(listener: () => void): () => void {
@@ -162,6 +197,10 @@ export class CantonLedgerClient {
   /**
    * Query active contracts visible to the specified party.
    * Canton Invariant: A party can ONLY read contracts where they are a signatory or observer.
+   *
+   * When `jsonApiUrl` is set this goes to the real ledger and records mode 'canton'.
+   * Otherwise — or when the request fails — it serves from the bundled isolation
+   * engine and records mode 'local'. The caller can always ask which happened.
    */
   async queryContracts<T = any>(templateId: string, party: string): Promise<Contract<T>[]> {
     if (this.config.jsonApiUrl) {
@@ -178,7 +217,9 @@ export class CantonLedgerClient {
             method: 'GET',
             headers,
           });
+          if (!res.ok) throw new Error(`JSON API v2 returned HTTP ${res.status}`);
           const data = await res.json();
+          this.recordRemoteSuccess();
           return data.activeContracts || [];
         } else {
           // Canton 2.x JSON API v1
@@ -187,10 +228,15 @@ export class CantonLedgerClient {
             headers,
             body: JSON.stringify({ templateIds: [templateId] }),
           });
+          if (!res.ok) throw new Error(`JSON API v1 returned HTTP ${res.status}`);
           const data = await res.json();
+          this.recordRemoteSuccess();
           return data.result || [];
         }
       } catch (err) {
+        // A failed remote read is recorded, not silently swallowed: the UI shows
+        // 'local' plus this reason so the demo never implies a live ledger.
+        this.recordRemoteFailure(err);
         console.warn('Canton JSON API unreachable, falling back to local participant engine', err);
       }
     }
@@ -201,6 +247,21 @@ export class CantonLedgerClient {
       const isStakeholder = c.signatories.includes(party) || c.observers.includes(party);
       return matchesTemplate && isStakeholder;
     }) as Contract<T>[];
+  }
+
+  /** Marks the client as backed by a real ledger and clears any failure note. */
+  private recordRemoteSuccess() {
+    this.mode = 'canton';
+    this.lastRemoteFailure = null;
+  }
+
+  /** Marks the client as locally served and keeps the reason for display. */
+  private recordRemoteFailure(err: unknown) {
+    this.mode = 'local';
+    const msg = err instanceof Error ? err.message : String(err);
+    this.lastRemoteFailure = this.config.jsonApiUrl
+      ? `No response from ${this.config.jsonApiUrl} (${msg})`
+      : 'No Canton JSON API URL configured';
   }
 
   /**

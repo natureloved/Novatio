@@ -1,7 +1,6 @@
 module Tests.NovatioTest where
 
 import Daml.Script
-import DA.Date
 import DA.Time
 import DA.Optional (isNone)
 import Novatio
@@ -133,5 +132,60 @@ testNovatioCompleteLifecycle = script do
     createCmd Cash with issuer = bank, holder = factorer, amount = 50000.0
   submitMustFail factorer do
     exerciseCmd finalSettledCid RemitSupplier with factorerCashCid = freshFactorerCash
+
+  -- 18. Registry Lifecycle: a fully settled invoice can be released so it may be re-financed
+  -- or restructured, while an UNSETTLED registration must never be releasable.
+  -- This proves `ReleaseSettledInvoice` is gated on settlement, not just caller identity.
+  --
+  -- `updatedRegistryCid` is the ContractId returned by the successful registration at
+  -- step 6. It stays live: the duplicate-registration probe at step 7 is a `submitMustFail`,
+  -- which rolls back without archiving the contract it failed against.
+  let liveRegistryCid = updatedRegistryCid
+
+  -- 18a. Register a second invoice (still outstanding) so the release's selectivity is testable.
+  -- Line items must sum exactly to `amount` — `CommercialInvoice.ensure` enforces it, and
+  -- the violation surfaces as a precondition failure, not a compile error.
+  secondCommercialCid <- submitMulti [supplier, buyer] [] do
+    createCmd CommercialInvoice with
+      supplier
+      buyer
+      invoiceNumber = "INV-2026-002"
+      amount = 50000.0
+      dueDate = invoiceDueDate
+      lineItems =
+        [ LineItem with itemCode = "AX-112", description = "Avionics Harness", quantity = 500.0, unitPrice = 100.0, totalPrice = 50000.0 ]
+  (registryAfterSecond, _offer2Cid) <- submit buyer do
+    exerciseCmd liveRegistryCid RegisterAndOfferFactoring with
+      commercialInvoiceCid = secondCommercialCid
+      factorer
+      advanceRate = 0.80
+      discountFee = 1000.0
+      auditor
+
+  -- 18b. Release using the settled obligation — both settlement legs complete.
+  releasedRegistryCid <- submit buyer do
+    exerciseCmd registryAfterSecond ReleaseSettledInvoice with settledCid = finalSettledCid
+  -- Read the released registry back through the buyer's own authority.
+  -- `queryContractId` needs no command submission (the pattern used at step 99).
+  Just finalRegistry <- queryContractId @NovationRegistry buyer releasedRegistryCid
+  -- INV-2026-001 is released; INV-2026-002 remains registered (still outstanding).
+  assertMsg "Settled invoice must be released from the registry"
+    ("INV-2026-001" `notElem` finalRegistry.registeredInvoices)
+  assertMsg "Outstanding invoice must remain registered"
+    ("INV-2026-002" `elem` finalRegistry.registeredInvoices)
+
+  -- 18c. Re-registering the released invoice must now SUCCEED, proving the release is real
+  -- and not merely a flag. Before this fix, the append-only registry blocked it forever.
+  (registryAfterReRegister, _offer3Cid) <- submit buyer do
+    exerciseCmd releasedRegistryCid RegisterAndOfferFactoring with
+      commercialInvoiceCid = commercialInvoiceCid
+      factorer
+      advanceRate = 0.85
+      discountFee = 2500.0
+      auditor
+
+  -- 18d. A non-settled obligation cannot release anything: the guard on `remitted` holds.
+  submitMustFail buyer do
+    exerciseCmd registryAfterReRegister ReleaseSettledInvoice with settledCid = settledCid
 
   return ()
