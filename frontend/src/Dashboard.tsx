@@ -31,6 +31,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
   const [factorerCommercialQueryCount, setFactorerCommercialQueryCount] = useState<number>(0);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
 
+  /**
+   * Connection truth, re-read on every state change.
+   * `isLocalSim` is derived from the client's actual request history, never from
+   * configuration, so the badge cannot claim a live ledger it is not using.
+   */
+  const [, forceRender] = useState<number>(0);
+  useEffect(() => {
+    const unsub = ledger.subscribe(() => forceRender(n => n + 1));
+    return unsub;
+  }, [ledger]);
+  const isLocalSim = ledger.isLocalSimulation();
+  const ledgerReason = ledger.getRemoteFailureReason();
+
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [xmlModalContent, setXmlModalContent] = useState<string | null>(null);
@@ -430,15 +443,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
 
         <div className="sidebar-spacer" />
 
-        {/* Network status card */}
+        {/* Network status card.
+            Reflects what the client is actually doing: 'canton' only appears
+            after a real JSON API round-trip, otherwise this is the bundled
+            participant-isolation engine and says so. */}
         <div className="network-card">
           <div className="network-top">
-            <span className="network-dot" />
-            <span>Canton Network</span>
-            <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: '10px', fontWeight: 700 }}>LIVE</span>
+            <span
+              className="network-dot"
+              style={isLocalSim ? { background: 'var(--ink-mute)' } : undefined}
+            />
+            <span>{isLocalSim ? 'Local Participant Simulator' : 'Canton Network'}</span>
+            <span
+              style={{
+                marginLeft: 'auto',
+                color: isLocalSim ? 'var(--ink-mute)' : 'var(--accent)',
+                fontSize: '10px',
+                fontWeight: 700,
+              }}
+            >
+              {isLocalSim ? 'SIMULATED' : 'LIVE'}
+            </span>
           </div>
           <p style={{ margin: '6px 0 0 16px', color: 'var(--ink-mute)', fontSize: '11px' }}>
-            Synchronizer #1 · Sub-Tx Privacy Enforced
+            {isLocalSim
+              ? ledgerReason
+                ? `Daml rules enforced locally · ${ledgerReason}`
+                : 'Daml rules enforced locally · no ledger URL configured'
+              : 'Synchronizer #1 · Sub-Tx Privacy Enforced'}
           </p>
         </div>
 

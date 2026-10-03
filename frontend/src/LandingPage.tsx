@@ -1,5 +1,25 @@
 import React, { useState } from 'react';
 
+// ─── Canonical facility terms ──────────────────────────────────────────────────
+// Single source of truth for the reference facility used in both the hero snapshot
+// and the interactive modeller's "Baseline" preset. These are the terms evaluated
+// end-to-end in daml/Tests/NovatioTest.daml ($85,000 advance, $2,500 fee, $12,500
+// remittance), so if this file and the Daml suite ever disagree the tests fail
+// before a user can be shown a wrong number.
+const REFERENCE_FACE_VALUE = 100000;   // $100,000 invoice face
+const REFERENCE_ADVANCE_RATE = 85;     // 85% advance
+const REFERENCE_DISCOUNT_RATE = 2.5;   // flat 2.5% of face, not annualised
+const REFERENCE_TENOR = 90;            // 90-day tenor
+
+// Derived once, at module scope, so the hero snapshot and modeller cannot drift.
+const refAdvance = REFERENCE_FACE_VALUE * (REFERENCE_ADVANCE_RATE / 100);
+const refFee = REFERENCE_FACE_VALUE * (REFERENCE_DISCOUNT_RATE / 100);
+const refYieldTenor = (refFee / refAdvance) * 100;                  // 2.9411...
+const refYieldPA = refYieldTenor * (360 / REFERENCE_TENOR);         // 11.764...
+
+const fmtRefPct = (n: number): string => n.toFixed(2);
+const fmtRefPA = (n: number): string => n.toFixed(1);
+
 interface LandingPageProps {
   onLaunchConsole: () => void;
   addToast: (type: 'success' | 'error' | 'info', message: string) => void;
@@ -8,18 +28,30 @@ interface LandingPageProps {
 export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addToast }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
-  // Facility Modeller State
-  const [modellerFaceValue, setModellerFaceValue] = useState<number>(100000);
-  const [modellerAdvanceRate, setModellerAdvanceRate] = useState<number>(85);
-  const [modellerDiscountRate, setModellerDiscountRate] = useState<number>(2.5);
-  const [modellerTenor, setModellerTenor] = useState<number>(90);
+  // Facility Modeller State — defaults are the canonical reference terms above,
+  // so the interactive model opens on exactly the facility the tests evaluate.
+  const [modellerFaceValue, setModellerFaceValue] = useState<number>(REFERENCE_FACE_VALUE);
+  const [modellerAdvanceRate, setModellerAdvanceRate] = useState<number>(REFERENCE_ADVANCE_RATE);
+  const [modellerDiscountRate, setModellerDiscountRate] = useState<number>(REFERENCE_DISCOUNT_RATE);
+  const [modellerTenor, setModellerTenor] = useState<number>(REFERENCE_TENOR);
   const [activePreset, setActivePreset] = useState<string>('baseline');
 
   // Facility Modeller Calculations
+  //
+  // Convention matches the Daml contract and docs/BUSINESS-BRIEF.md: the discount
+  // fee is a FLAT percentage of invoice face value, deducted from the reserve at
+  // maturity (2.5% of $100k = $2,500), exactly as `FinanceableReceivable.discountFee`
+  // is used in Novatio.daml. Yield is derived from that fee, never hardcoded.
   const calcAdvance = modellerFaceValue * (modellerAdvanceRate / 100);
-  const calcFee = calcAdvance * (modellerDiscountRate / 100) * (modellerTenor / 360);
+  const calcFee = modellerFaceValue * (modellerDiscountRate / 100);
   const calcReserve = modellerFaceValue - calcAdvance;
-  const calcYieldPA = calcAdvance > 0 ? (calcFee / calcAdvance) * (360 / modellerTenor) * 100 : 0;
+  // Remittance = reserve minus the flat fee, as `RemitSupplier` computes on-ledger.
+  const calcRemittance = calcReserve - calcFee;
+  // Supplier total = advance + remittance (effective cost of capital).
+  const calcSupplierTotal = calcAdvance + calcRemittance;
+  // Quarterly yield on deployed capital, annualised for display.
+  const calcYieldTenor = calcAdvance > 0 ? (calcFee / calcAdvance) * 100 : 0;
+  const calcYieldPA = calcAdvance > 0 ? calcYieldTenor * (360 / modellerTenor) : 0;
 
   const setPreset = (name: string, v: number, a: number, r: number, d: number) => {
     setActivePreset(name);
@@ -147,7 +179,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
             <div className="kv"><span>Advance rate</span><span className="mono">85.0%</span></div>
             <div className="kv"><span>Cash disbursed (T+0)</span><span className="mono" style={{ color: 'var(--accent)' }}>$ 85,000.00</span></div>
             <div className="kv"><span>Discount fee (90d)</span><span className="mono" style={{ color: 'var(--gold)' }}>$ 2,500.00</span></div>
-            <div className="kv"><span>Factorer net yield</span><span className="mono" style={{ color: 'var(--accent)', fontWeight: 700 }}>+ 11.8% p.a.</span></div>
+            <div className="kv"><span>Factorer net yield</span><span className="mono" style={{ color: 'var(--accent)', fontWeight: 700 }}>+ {fmtRefPct(refYieldTenor)}% / {REFERENCE_TENOR}d ({fmtRefPA(refYieldPA)}% p.a.)</span></div>
             <div style={{ display: 'flex', gap: '8px', marginTop: '18px', flexWrap: 'wrap' }}>
               <span className="badge"><span className="dot"></span>Atomic DvP settled</span>
               <span className="badge">ISO 20022 · pacs.008</span>
@@ -255,7 +287,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </svg>
               </div>
               <h3>Scoped auditing</h3>
-              <p>Regulators and auditors receive cryptographically-scoped read access, only to fields they are entitled to see, without decrypting the full contract graph.</p>
+              <p>Regulators and auditors see only the fields they are entitled to, never the full contract graph: the commitment hash lets them anchor a FinanceableReceivable to its CommercialInvoice without reading it.</p>
               <span className="tag">Compliance-grade</span>
             </div>
             <div className="feature">
@@ -264,8 +296,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                   <path d="M4 4 H20 V20 H4 Z"/><path d="M4 9 H20"/><path d="M9 4 V20"/>
                 </svg>
               </div>
-              <h3>ISO 20022 native</h3>
-              <p>Every event emits pacs.008 messages directly, integrating with SWIFT, core banking, and corporate treasury systems without translation layers.</p>
+              <h3>ISO 20022 mapping</h3>
+              <p>Settled obligations are exported as ISO 20022 pacs.008 messages carrying the on-chain commitment hash, so treasury and back-office systems receive the same payment instruction the ledger recorded.</p>
               <span className="tag">Interoperable</span>
             </div>
           </div>
@@ -294,7 +326,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
               <div className="preset">
                 <button 
                   className={activePreset === 'baseline' ? 'active' : ''} 
-                  onClick={() => setPreset('baseline', 100000, 85, 2.5, 90)}
+                  onClick={() => setPreset('baseline', REFERENCE_FACE_VALUE, REFERENCE_ADVANCE_RATE, REFERENCE_DISCOUNT_RATE, REFERENCE_TENOR)}
                 >
                   $100K · 90d (HackCanton Model)
                 </button>
@@ -386,8 +418,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 </div>
                 <div className="calc-box accent">
                   <div className="lbl">Factorer Net Yield</div>
-                  <div className="val mono">{calcYieldPA.toFixed(2)}%<small>p.a.</small></div>
-                  <div className="delta">+ {fmtUSD(calcFee)} in {modellerTenor} days</div>
+                  <div className="val mono">{calcYieldTenor.toFixed(2)}%<small>/{modellerTenor}d</small></div>
+                  <div className="delta">+ {fmtUSD(calcFee)} · {calcYieldPA.toFixed(1)}% annualised</div>
                 </div>
                 <div className="calc-box">
                   <div className="lbl">Discount fee</div>
@@ -440,7 +472,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                   <circle cx="12" cy="12" r="9"/><path d="M12 8 V12 M12 16 V16.01"/>
                 </svg>
                 <div style={{ fontSize: '13px', color: 'var(--ink-soft)' }}>
-                  <b style={{ color: 'var(--ink)' }}>Canton sub-partitions</b> ensure the receivable exists on exactly one ledger. Double-financing is structurally impossible, not merely detected.
+                  <b style={{ color: 'var(--ink)' }}>Canton sub-partitions</b> ensure a receivable has exactly one authoritative writer — its buyer's NovationRegistry. Against that buyer, double-financing is structurally impossible, not merely detected: the registry's consuming choice makes the second pledge fail at the authorisation stage.
                 </div>
               </div>
             </div>
