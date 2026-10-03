@@ -28,6 +28,39 @@ echo "=== [4/5] Frontend builds ==="
 echo "=== [5/5] No stale hardcoded APR ==="
 grep -q "11.8% p.a." frontend/src/LandingPage.tsx; [ $? -ne 0 ]; chk $? "no hardcoded APR string"
 
+# 6. Mobile layout: the topbar must wrap on phone widths and the page must not
+# scroll horizontally. This is the regression a CSS-only refactor can
+# reintroduce silently — it measures built output, not source.
+#
+# A copy of the probe is used (not the committed one, which is edited in place
+# above) so the check never leaves the repo dirty.
+echo "=== [6/6] Mobile layout has no horizontal overflow ==="
+if command -v google-chrome >/dev/null 2>&1 && [ -f scripts/mobile-probe-dashboard.py ]; then
+  (cd frontend && (npx vite preview --port 4179 --host 127.0.0.1 >/tmp/preview-verify.log 2>&1 &) )
+  # Bounded readiness probe rather than a blind sleep.
+  READY=0
+  for _ in $(seq 1 24); do
+    if curl -sf -o /dev/null http://127.0.0.1:4179/ 2>/dev/null; then READY=1; break; fi
+    sleep 0.5
+  done
+  if [ "$READY" -eq 1 ]; then
+    PROBE_TMP=$(mktemp /tmp/nov-mobile-probe.XXXXXX.py)
+    sed "s#417[0-9]#4179#g" scripts/mobile-probe-dashboard.py > "$PROBE_TMP"
+    OUT=$(timeout 200 python3 "$PROBE_TMP" 9251 2>&1)
+    # Every phone width must report exactly 0 page-level overflow.
+    OVERFLOWS=$(printf '%s\n' "$OUT" | grep -oE "overflowX=\s*[0-9]+" | grep -oE "[0-9]+" | grep -v "^0$" | wc -l)
+    [ "$OVERFLOWS" -eq 0 ]; chk $? "no horizontal overflow at phone widths"
+    echo "$OUT" | grep -q "DASHBOARD_BADGE: SIMULATED"; chk $? "dashboard badge still honest (SIMULATED)"
+    rm -f "$PROBE_TMP"
+    PREVIEW_PID=$(pgrep -f "vite preview --port 4179" | head -1)
+    [ -n "$PREVIEW_PID" ] && kill "$PREVIEW_PID" 2>/dev/null
+  else
+    no "vite preview started for mobile check"
+  fi
+else
+  no "google-chrome or mobile probe unavailable"
+fi
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
