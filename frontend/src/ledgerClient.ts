@@ -99,6 +99,34 @@ export class CantonLedgerClient {
     this.seedInitialParticipantState();
   }
 
+  /**
+   * Fetch a runtime config JSON from the same origin. This is the
+   * path that keeps the JWT out of the bundle: the file lives at
+   * `/novatio-canton/config.json` on the page origin (the CORS proxy
+   * or the preview server), not in `import.meta.env`. `canton-local.sh`
+   * writes it on start; Vercel has no such file, so the fetch 404s
+   * and the client falls back to build-time env, which is empty on
+   * the deploy → honest SIMULATED mode.
+   *
+   * Safe to call when no server is running — returns null on any
+   * fetch failure and never throws.
+   */
+  static async loadRuntimeConfig(): Promise<Partial<LedgerClientConfig> | null> {
+    try {
+      const res = await fetch('/novatio-canton/config.json', { credentials: 'omit' });
+      if (!res.ok) return null;
+      const raw = await res.json();
+      const out: Partial<LedgerClientConfig> = {};
+      if (raw.ledgerUrl) out.jsonApiUrl = raw.ledgerUrl;
+      if (raw.apiVersion) out.jsonApiVersion = raw.apiVersion === 'v2' ? 'v2' : 'v1';
+      if (raw.jwt) out.authToken = raw.jwt;
+      if (raw.packageId) out.packageId = raw.packageId;
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
   /** 'canton' only after a successful HTTP round-trip to a real ledger. */
   public getConnectionMode(): ConnectionMode {
     return this.mode;

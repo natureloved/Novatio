@@ -7,28 +7,40 @@ import './index.css';
 /**
  * Ledger wiring.
  *
- * The dashboard only talks to a real Canton Network node when VITE_LEDGER_URL
- * points at one (e.g. `VITE_LEDGER_URL=http://localhost:7575 npm run dev`, or
- * by sourcing what `scripts/canton-local.sh` writes to `frontend/.env.local`).
- * With no URL — the default — the bundled participant-isolation engine serves
- * state, and the UI labels itself as a local participant simulator rather than
- * implying a live ledger.
- *
- * VITE_LEDGER_API_VERSION selects 'v1' or 'v2'. VITE_LEDGER_JWT is the bearer
- * token for the local dev node; a real deployment would exchange per-party JWTs
- * through VITE_LEDGER_JWTOKENS_<PARTY> instead.
+ * The dashboard only talks to a real Canton Network node when a
+ * runtime config exists at /novatio-canton/config.json (written by
+ * scripts/canton-local.sh) or when VITE_LEDGER_URL is set at build
+ * time. The runtime path keeps the bearer token out of the bundle:
+ * the config file lives on the page origin, not in import.meta.env,
+ * so Vite never embeds it. With neither source present the client
+ * falls back to the bundled isolation engine and labels itself
+ * SIMULATED — honest by default.
  */
-function buildLedgerConfig(): LedgerClientConfig {
+async function buildLedgerConfig(): Promise<LedgerClientConfig> {
   const env = import.meta.env ?? {};
-  return {
+  const base: LedgerClientConfig = {
     jsonApiUrl: env.VITE_LEDGER_URL || undefined,
     jsonApiVersion: (env.VITE_LEDGER_API_VERSION === 'v2' ? 'v2' : 'v1'),
     authToken: env.VITE_LEDGER_JWT || undefined,
     packageId: env.VITE_LEDGER_PACKAGE_ID || undefined,
   };
+  const runtime = await CantonLedgerClient.loadRuntimeConfig();
+  // Runtime source wins when present, so a fresh start (config written
+  // after the last build) overrides whatever the bundle says.
+  return { ...base, ...runtime };
 }
 
-const ledger = new CantonLedgerClient(buildLedgerConfig());
+let _ledger: CantonLedgerClient | null = null;
+let _ledgerReady: Promise<CantonLedgerClient> | null = null;
+
+function getLedger(): Promise<CantonLedgerClient> {
+  if (_ledgerReady) return _ledgerReady;
+  _ledgerReady = buildLedgerConfig().then(cfg => {
+    if (!_ledger) _ledger = new CantonLedgerClient(cfg);
+    return _ledger;
+  });
+  return _ledgerReady;
+}
 
 interface ToastInfo {
   id: string;
@@ -41,6 +53,11 @@ export const App: React.FC = () => {
     return window.location.hash === '#dashboard' ? 'dashboard' : 'landing';
   });
   const [toasts, setToasts] = useState<ToastInfo[]>([]);
+  const [ledger, setLedger] = useState<CantonLedgerClient | null>(null);
+
+  useEffect(() => {
+    getLedger().then(setLedger);
+  }, []);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -95,15 +112,17 @@ export const App: React.FC = () => {
       </div>
 
       {viewMode === 'landing' ? (
-        <LandingPage 
-          onLaunchConsole={handleLaunchDashboard} 
-          addToast={addToast} 
+        <LandingPage
+          onLaunchConsole={handleLaunchDashboard}
+          addToast={addToast}
         />
+      ) : !ledger ? (
+        <div className="loading">Connecting to the ledger…</div>
       ) : (
-        <Dashboard 
-          ledger={ledger} 
-          onNavigateHome={handleNavigateHome} 
-          addToast={addToast} 
+        <Dashboard
+          ledger={ledger}
+          onNavigateHome={handleNavigateHome}
+          addToast={addToast}
         />
       )}
     </div>
