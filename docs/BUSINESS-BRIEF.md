@@ -14,7 +14,7 @@ Novatio brings the $3 Trillion trade finance invoice factoring market to Canton 
 - **Reserve Leg:** 15% ($15,000.00) held in reserve until buyer settlement.
 - **Discount Fee:** 2.5% ($2,500.00) of face value.
 - **Net Remittance:** Upon settlement, supplier receives Reserve ($15,000) − Fee ($2,500) = $12,500.00. Total supplier received: $97,500.00 (effective cost: 2.50%).
-- **Factorer Yield:** Factorer earns $2,500.00 on $85,000.00 capital deployed for 90 days = 2.941% quarterly return ≈ 11.8% annualized asset-backed APR.
+- **Factorer Yield:** Factorer earns $2,500.00 on $85,000.00 capital deployed for 90 days = 2.941% per 90-day cycle = **11.76% APR** (2.941% × 360/90). Annualized on the actual/360 money-market convention standard for short-duration trade finance; the cycle is 90 days, not a calendar quarter.
 - **Novatio Protocol Fee:** Novatio captures 0.15% technology clearing fee per transaction ($150 on $100k).
 
 ## 4. Why Canton Network?

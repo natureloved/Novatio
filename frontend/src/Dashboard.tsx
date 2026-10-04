@@ -233,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
         { factorerCashCid: factorerCash[0].contractId },
         'Canton_Capital_Desk'
       );
-      addToast('success', '✓ Settlement Leg 2 Completed: Factorer remitted $12,500.00 to Supplier. Net yield +$2,500 (11.8% APR).');
+      addToast('success', '✓ Settlement Leg 2 Completed: Factorer remitted $12,500.00 to Supplier. Net yield +$2,500 (11.76% APR).');
     } catch (err: any) {
       addToast('error', `Remittance failed: ${err.message}`);
     }
@@ -704,7 +704,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                       <circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>
                     </svg>
                   </div>
-                  <div className="metric-value" style={{ color: 'var(--accent)' }}>11.8%<small style={{ fontSize: '13px' }}> APR</small></div>
+                  <div className="metric-value" style={{ color: 'var(--accent)' }}>11.76%<small style={{ fontSize: '13px' }}> APR</small></div>
                   <div className="metric-foot">
                     <span className="trend">+$2,500.00</span>
                     <span>quarterly net gain</span>
@@ -1183,7 +1183,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                           </tr>
                           <tr>
                             <td>Discount Fee / Annual Yield</td>
-                            <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>$2,500.00 (11.8% Net APR)</td>
+                            <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>$2,500.00 (11.76% Net APR)</td>
                           </tr>
                           <tr>
                             <td>Joint SHA-256 Hash</td>

@@ -75,8 +75,8 @@ While supply chain accounts receivable factoring is a **$3 Trillion global marke
 | **Supplier Cost of Capital** | **2.50% Flat** | $2,500.00 total fee paid for 90 days of liquidity. |
 | **Factorer Capital Deployed** | **$85,000.00** | Principal committed for 90 days. |
 | **Factorer Net Profit** | **$2,500.00** | $100,000 recovery − $85,000 advance − $12,500 remittance. |
-| **Factorer Quarterly Net Yield** | **2.941%** | $2,500 / $85,000 = 2.941% return per 90-day cycle. |
-| **Factorer Annualized Return (APR)** | **11.76% ≈ 11.8%** | 2.941% × 4 = 11.76% annualized asset-backed APR. |
+| **Factorer Net Yield per 90-Day Cycle** | **2.941%** | $2,500 / $85,000 = 2.941% return each 90-day financing cycle. |
+| **Factorer Annualized Return (APR)** | **11.76%** | 2.941% × (360/90) = 11.76% actual/360 annualized asset-backed return. |
 | **Protocol Technology Fee** | **0.15% ($150.00)** | Software clearing fee captured by Novatio protocol. |
 
 ---

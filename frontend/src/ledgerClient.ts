@@ -774,7 +774,7 @@ export class CantonLedgerClient {
         template: 'Novatio:SettledObligation',
         status: 'COMMITTED',
         stakeholders: [contract.payload.buyer, contract.payload.factorer, contract.payload.supplier, contract.payload.auditor],
-        summary: `Settlement Leg 2: Factorer remitted $12,500.00 ($15k reserve - $2,500 discount fee) to Supplier. Factorer netted $2,500 (11.8% APR).`,
+        summary: `Settlement Leg 2: Factorer remitted $12,500.00 ($15k reserve - $2,500 discount fee) to Supplier. Factorer netted $2,500 (11.76% APR).`,
       });
 
       this.notify();

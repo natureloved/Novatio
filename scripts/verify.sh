@@ -26,7 +26,13 @@ echo "=== [4/5] Frontend builds ==="
 (cd frontend && timeout 400 npx vite build >/tmp/vite.log 2>&1); chk $? "vite build succeeds"
 
 echo "=== [5/5] No stale hardcoded APR ==="
-grep -q "11.8% p.a." frontend/src/LandingPage.tsx; [ $? -ne 0 ]; chk $? "no hardcoded APR string"
+# APR must be one number everywhere. Hardcoding it in any UI string is how the
+# landing page, the dashboard and the docs drifted apart before (11.8 vs 11.76).
+# The landing page derives it (refYieldPA) - the dashboard texts and the docs
+# must state the same figure, so pin the wrong spellings out of all of them.
+STALE_APR=$(grep -rn "11\.8%" frontend/src README.md docs 2>/dev/null)
+[ -z "$STALE_APR" ]; chk $? "no stale 11.8% APR anywhere"
+if [ -n "$STALE_APR" ]; then printf '%s\n' "$STALE_APR" | sed 's/^/    stale: /'; fi
 
 # 6. Mobile layout: the topbar must wrap on phone widths and the page must not
 # scroll horizontally. This is the regression a CSS-only refactor can
