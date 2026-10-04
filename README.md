@@ -147,6 +147,34 @@ The frontend is equipped with:
   6. *Auditor Node:* Exercise `QueryActiveAudit` and `QuerySettledAudit`, preview and export ISO 20022 `pacs.008` XML.
 - **Participant Switching:** Switch between `Acme_Electronics`, `Global_Motors_OEM`, `Canton_Capital_Desk`, and `Regulatory_Observer`.
 
+### C. Running Against a Real Canton Ledger
+
+The dashboard labels itself honestly: it shows **LIVE** only after a request to
+a real Canton JSON API has succeeded, and **SIMULATED** otherwise. With no
+ledger configured it runs the bundled participant-isolation engine, which is a
+faithful local model — not a live ledger.
+
+To run the whole local stack (Canton participant + in-memory domain + JSON
+Ledger API + CORS proxy + seeded demo contracts):
+
+```bash
+bash scripts/canton-local.sh start   # ~2 min on a cold start; writes frontend/public/novatio-canton/config.json
+cd frontend && npm run dev           # then open http://localhost:5173 and launch the console
+bash scripts/canton-local.sh status  # confirms the browser can reach the ledger
+bash scripts/canton-local.sh stop
+```
+
+Notes on this path:
+- The bearer token lives in `frontend/public/novatio-canton/config.json`, not in
+  the JavaScript bundle — Vite would otherwise bake any `VITE_LEDGER_JWT` into
+  `dist/assets/*.js` where anyone could read it.
+- The JSON API rejects cross-origin browser requests (no `Access-Control-*`
+  headers, and a 404 on `OPTIONS`), so `scripts/cors-proxy.py` sits in front of
+  it and `VITE_LEDGER_URL` points at the proxy.
+- **The hosted/deployed URL shows SIMULATED.** The live node binds `127.0.0.1`
+  only, so a visitor to the remote site has no ledger to reach. Connect the
+  proxy, or deploy a participant, to demo a live ledger.
+
 ---
 
 ## 6. Official HackCanton Track 1 Deliverables

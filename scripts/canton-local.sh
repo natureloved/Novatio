@@ -27,6 +27,7 @@ BUILD_LOG="$RUN_DIR/build.log"
 CANTON_LOG="$RUN_DIR/canton.log"
 JSONAPI_LOG="$RUN_DIR/jsonapi.log"
 PROXY_LOG="$RUN_DIR/cors-proxy.log"
+SEED_LOG="$RUN_DIR/seed.log"
 JWT_FILE="$RUN_DIR/novatio.jwt"
 CONF_FILE="$RUN_DIR/canton.conf"
 BOOTSTRAP_FILE="$RUN_DIR/bootstrap.canton"
@@ -294,6 +295,15 @@ PKG_SCRIPT
 }
 CONFIG_EOF
   log "wrote frontend/public/novatio-canton/config.json"
+
+  # Seed demo contracts so the ledger is not empty on a fresh start. In-memory
+  # storage means every start begins blank, and a live-but-empty dashboard reads
+  # as "the ledger is broken". Refuses to run if contracts already exist.
+  if python3 "$NOVATIO_ROOT/scripts/seed-ledger.py" "$NOVATIO_ROOT/frontend/public/novatio-canton/config.json" >"$SEED_LOG" 2>&1; then
+    log "seeded demo contracts ($(grep -c 'created' "$SEED_LOG") created)"
+  else
+    log "warning: seed step did not seed - see $SEED_LOG"
+  fi
 
   log "READY - VITE_LEDGER_URL=http://127.0.0.1:$PROXY_PORT (CORS proxy -> JSON API on $JSONAPI_PORT)"
 }
