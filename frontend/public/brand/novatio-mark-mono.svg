@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="Novatio mark: one invoice, one writer">
+  
+  <defs>
+    <linearGradient id="novatio-mark-mono" x1="6" y1="12" x2="58" y2="52"
+      gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C9A75C"/>
+      <stop offset="1" stop-color="#A8853A"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M9 18 H37" fill="none" stroke="#0B1F3A" stroke-width="4.5"
+    stroke-linecap="round"/>
+  <path d="M9 32 H41" fill="none" stroke="#0B1F3A" stroke-width="4.5"
+    stroke-linecap="round"/>
+  <path d="M9 46 H37" fill="none" stroke="#0B1F3A" stroke-width="4.5"
+    stroke-linecap="round"/>
+
+  <path d="M46 14 V50" fill="none" stroke="#0B1F3A" stroke-width="4.5"
+    stroke-linecap="round"/>
+
+  <path d="M51 32 H59" fill="none" stroke="#A8853A"
+    stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M54 27 L59 32 L54 37" fill="none" stroke="#A8853A" stroke-width="4.5"
+    stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="Novatio mark on dark background: one invoice, one writer">
+  <!--
+    THE NOVATIO MARK: ONE INVOICE, ONE WRITER.
+
+    The differentiator is single-writer deduplication: the buyer is the only
+    party authorized to write its NovationRegistry entry, so an invoice can be
+    registered for factoring exactly once. That is what stops the same
+    receivable being pledged twice.
+
+    Three invoice lines converge on a gate; exactly one path emerges carrying
+    the value. Only the outgoing arrow is gold.
+
+    Palette is taken from frontend/src/index.css, hex for hex:
+      gold #A8853A, gold-soft #E3C583, ink #F6F3EC, accent #1E4D3A,
+      paper #F6F3EC
+
+    Geometry: 4.5-unit strokes on a 64-unit viewBox, no detail under 4 units,
+    so the mark holds from a 16px favicon up to a 2048px master.
+  -->
+  <defs>
+    <linearGradient id="novatio-mark-value-dark" x1="6" y1="12" x2="58" y2="52"
+      gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E3C583"/>
+      <stop offset="1" stop-color="#A8853A"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M9 18 H37" fill="none" stroke="#F6F3EC" stroke-width="4.5"
+    stroke-linecap="round"/>
+  <path d="M9 32 H41" fill="none" stroke="#F6F3EC" stroke-width="4.5"
+    stroke-linecap="round"/>
+  <path d="M9 46 H37" fill="none" stroke="#F6F3EC" stroke-width="4.5"
+    stroke-linecap="round"/>
+
+  <path d="M46 14 V50" fill="none" stroke="#1E4D3A" stroke-width="4.5"
+    stroke-linecap="round"/>
+
+  <path d="M51 32 H59" fill="none" stroke="url(#novatio-mark-value-dark)"
+    stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M54 27 L59 32 L54 37" fill="none" stroke="#A8853A" stroke-width="4.5"
+    stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

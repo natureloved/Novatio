@@ -88,20 +88,15 @@ nav.top {
   color: var(--ink);
 }
 
+/* No longer a bordered circle: the mark is rectangular by design (a crisp
+   square tile in the browser tab), and the circle clipped its corners. The
+   Dashboard sidebar keeps a 32px square wrapper for alignment only. */
 .brand-mark {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--ink);
-  border-radius: 50%;
-  background: #fff;
-  overflow: hidden;
-}
-
-.brand-mark img {
-  width: 18px;
-  height: 18px;
+  flex-shrink: 0;
 }
 
 .nav-links {

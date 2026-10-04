@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { NovatioMark } from './brand/NovatioMark';
 import { CantonLedgerClient, Contract, AuditReport, TransactionEvent } from './ledgerClient';
 import { generatePacs008Xml, downloadPacs008Xml } from './iso20022Mapper';
 
@@ -350,9 +351,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
       <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`} aria-label="Primary dashboard navigation">
         <div className="brand" style={{ padding: '0 8px', marginBottom: '24px' }}>
           <div className="brand-mark" style={{ width: '32px', height: '32px' }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '16px', height: '16px' }}>
-              <path d="M4 20 L12 4 L20 20"/><path d="M8 14 L16 14"/>
-            </svg>
+            <NovatioMark size={26} />
           </div>
           <span className="serif" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--ink)' }}>
             Novatio

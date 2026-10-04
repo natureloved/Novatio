@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NovatioMark } from './brand/NovatioMark';
 
 // ─── Canonical facility terms ──────────────────────────────────────────────────
 // Single source of truth for the reference facility used in both the hero snapshot
@@ -69,11 +70,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
       <nav className="top">
         <div className="wrap nav-in">
           <div className="brand">
-            <div className="brand-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 20 L12 4 L20 20"/><path d="M8 14 L16 14"/>
-              </svg>
-            </div>
+            <NovatioMark size={30} />
             Novatio
           </div>
 
@@ -564,11 +561,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
       <footer>
         <div className="wrap foot-in">
           <div className="mark">
-            <div className="brand-mark" style={{ width: '22px', height: '22px' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: '11px', height: '11px' }}>
-                <path d="M4 20 L12 4 L20 20"/><path d="M8 14 L16 14"/>
-              </svg>
-            </div>
+            <NovatioMark size={22} />
             Novatio Protocol
           </div>
           <div className="foot-links">
