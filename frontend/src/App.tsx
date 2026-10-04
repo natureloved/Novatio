@@ -8,16 +8,23 @@ import './index.css';
  * Ledger wiring.
  *
  * The dashboard only talks to a real Canton Network node when VITE_LEDGER_URL
- * points at one (e.g. `VITE_LEDGER_URL=http://localhost:7575 npm run dev`).
+ * points at one (e.g. `VITE_LEDGER_URL=http://localhost:7575 npm run dev`, or
+ * by sourcing what `scripts/canton-local.sh` writes to `frontend/.env.local`).
  * With no URL — the default — the bundled participant-isolation engine serves
  * state, and the UI labels itself as a local participant simulator rather than
- * implying a live ledger. VITE_LEDGER_API_VERSION selects 'v1' or 'v2'.
+ * implying a live ledger.
+ *
+ * VITE_LEDGER_API_VERSION selects 'v1' or 'v2'. VITE_LEDGER_JWT is the bearer
+ * token for the local dev node; a real deployment would exchange per-party JWTs
+ * through VITE_LEDGER_JWTOKENS_<PARTY> instead.
  */
 function buildLedgerConfig(): LedgerClientConfig {
   const env = import.meta.env ?? {};
   return {
     jsonApiUrl: env.VITE_LEDGER_URL || undefined,
     jsonApiVersion: (env.VITE_LEDGER_API_VERSION === 'v2' ? 'v2' : 'v1'),
+    authToken: env.VITE_LEDGER_JWT || undefined,
+    packageId: env.VITE_LEDGER_PACKAGE_ID || undefined,
   };
 }
 

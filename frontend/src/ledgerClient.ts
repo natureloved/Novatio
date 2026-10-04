@@ -26,6 +26,19 @@ export interface LedgerClientConfig {
   jsonApiUrl?: string; // e.g. "http://localhost:7575"
   jsonApiVersion?: 'v1' | 'v2'; // default: 'v1'
   jwtTokens?: Record<string, string>; // Party -> Bearer Token
+  /**
+   * Single bearer token applied to every request when `jwtTokens` has no entry
+   * for the acting party. A local Canton node (scripts/canton-local.sh) mints
+   * one unsigned dev JWT carrying all party ids, so this is how the browser
+   * authenticates against it. Not a production auth scheme.
+   */
+  authToken?: string;
+  /**
+   * Novatio package id, e.g. "5f275467...". Optional: when omitted the client
+   * discovers it from the ledger, so a `daml build` that changes the hash does
+   * not silently break template lookups.
+   */
+  packageId?: string;
 }
 
 /**
@@ -65,6 +78,14 @@ export class CantonLedgerClient {
    */
   private mode: ConnectionMode = 'local';
   private lastRemoteFailure: string | null = null;
+
+  /**
+   * Canton package id, e.g. "5f275467...". Discovered lazily from the ledger's
+   * package list and cached, because it changes on every `daml build` and the
+   * JSON API only accepts fully-qualified `<packageId>:<module>:<template>` ids.
+   */
+  private packageId: string | null = null;
+  private packageIdPromise: Promise<string | null> | null = null;
 
   constructor(config: LedgerClientConfig = {}) {
     this.config = { jsonApiVersion: 'v1', ...config };
@@ -202,23 +223,114 @@ export class CantonLedgerClient {
    * Otherwise — or when the request fails — it serves from the bundled isolation
    * engine and records mode 'local'. The caller can always ask which happened.
    */
+  /**
+   * Resolves the bearer token for a request. Prefers a per-party token, then a
+   * single shared dev token. Returns null when neither is configured, in which
+   * case the request goes out unsigned and the ledger answers 401 — recorded as
+   * a remote failure rather than silently falling back to the simulator.
+   */
+  private tokenFor(party: string): string | null {
+    return this.config.jwtTokens?.[party] || this.config.authToken || null;
+  }
+
+  /**
+   * Headers for an authenticated request, or null if no token is available.
+   */
+  private authHeaders(party: string): Record<string, string> | null {
+    const token = this.tokenFor(party);
+    return token ? { Authorization: `Bearer ${token}` } : null;
+  }
+
+  /**
+   * Qualifies a template id, awaiting package-id discovery if it has not
+   * resolved yet. `queryContracts` cannot be async-cached without changing its
+   * signature, so this is the awaitable form used by `exerciseChoice`.
+   */
+  private async ensureQualifiedAsync(templateId: string): Promise<string> {
+    if (templateId.split(':').length >= 3) return templateId;
+    const pkg = await this.resolvePackageId();
+    return pkg ? `${pkg}:${templateId}` : templateId;
+  }
+
+  /**
+   * Discovers the Novatio package id on the ledger.
+   *
+   * The id is a content hash, so it changes on every `daml build`; hardcoding
+   * it would break silently on the next build. `GET /v1/packages` lists every
+   * package the participant knows (37 on a fresh node: Novatio plus its stdlib
+   * dependencies) but does not say which is which — and the order is dependency
+   * resolution order, so "the last one" and "index 6" are both guesses that
+   * break when the dependency set changes.
+   *
+   * So each candidate is probed. The probe must read the JSON body, NOT the
+   * HTTP status: this JSON API answers 200 on the wire and carries its real
+   * status in a `status` field, with `errors` set when a template id does not
+   * resolve. Judging by transport status accepts the wrong package.
+   */
+  private async resolvePackageId(): Promise<string | null> {
+    if (this.packageId) return this.packageId;
+    if (this.packageIdPromise) return this.packageIdPromise;
+
+    this.packageIdPromise = (async () => {
+      // 1. Explicitly configured wins — no round-trip, and works offline.
+      if (this.config.packageId) {
+        this.packageId = this.config.packageId;
+        return this.packageId;
+      }
+      if (!this.config.jsonApiUrl) return null;
+
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(this.authHeaders('probe') || {}),
+        };
+        const listRes = await fetch(`${this.config.jsonApiUrl}/v1/packages`, { headers });
+        if (!listRes.ok) return null;
+        const ids: string[] = (await listRes.json()).result || [];
+
+        // 2. Probe each candidate. A package that does not contain the template
+        //    answers with `errors` (unknownTemplateIds) even at transport 200.
+        for (const id of ids) {
+          const probe = await fetch(`${this.config.jsonApiUrl}/v1/query`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ templateIds: [`${id}:Novatio:Cash`] }),
+          });
+          const data = await probe.json().catch(() => ({}));
+          if (!data.errors) {
+            this.packageId = id;
+            return this.packageId;
+          }
+        }
+      } catch {
+        // falls through
+      }
+      return null;
+    })();
+
+    return this.packageIdPromise;
+  }
+
   async queryContracts<T = any>(templateId: string, party: string): Promise<Contract<T>[]> {
     if (this.config.jsonApiUrl) {
       try {
-        const token = this.config.jwtTokens?.[party] || '';
+        const token = this.tokenFor(party);
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         };
 
+        const qualified = await this.ensureQualifiedAsync(templateId);
         if (this.config.jsonApiVersion === 'v2') {
           // Canton 3.x JSON Ledger API v2
-          const res = await fetch(`${this.config.jsonApiUrl}/v2/state/active-contracts?template_id_filter=${encodeURIComponent(templateId)}`, {
+          const res = await fetch(`${this.config.jsonApiUrl}/v2/state/active-contracts?template_id_filter=${encodeURIComponent(qualified)}`, {
             method: 'GET',
             headers,
           });
           if (!res.ok) throw new Error(`JSON API v2 returned HTTP ${res.status}`);
           const data = await res.json();
+          // The JSON API can answer transport-200 with an error envelope.
+          if (data.errors) throw new Error(`JSON API v2 error: ${JSON.stringify(data.errors).slice(0, 300)}`);
           this.recordRemoteSuccess();
           return data.activeContracts || [];
         } else {
@@ -226,10 +338,15 @@ export class CantonLedgerClient {
           const res = await fetch(`${this.config.jsonApiUrl}/v1/query`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ templateIds: [templateId] }),
+            body: JSON.stringify({ templateIds: [qualified] }),
           });
-          if (!res.ok) throw new Error(`JSON API v1 returned HTTP ${res.status}`);
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
+          // Judge by the envelope, never by transport status: this API reports
+          // "Cannot resolve any template ID from request" inside a 200.
+          if (!res.ok || data.errors) {
+            const detail = data.errors ? JSON.stringify(data.errors).slice(0, 300) : `HTTP ${res.status}`;
+            throw new Error(`JSON API v1 rejected the query for ${qualified}: ${detail}`);
+          }
           this.recordRemoteSuccess();
           return data.result || [];
         }
@@ -276,7 +393,10 @@ export class CantonLedgerClient {
     actAsParty: string
   ): Promise<R> {
     if (this.config.jsonApiUrl) {
-      const token = this.config.jwtTokens?.[actAsParty] || '';
+      // Qualify before anything else: the JSON API rejects "Novatio:Cash" as a
+      // malformed template id, and the package id only changes on rebuild.
+      const qualified = await this.ensureQualifiedAsync(templateId);
+      const token = this.tokenFor(actAsParty);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -288,19 +408,33 @@ export class CantonLedgerClient {
           headers,
           body: JSON.stringify({
             commands: [{
-              exercise: { templateId, contractId, choice, choiceArgument: argument }
+              exercise: { templateId: qualified, contractId, choice, choiceArgument: argument }
             }],
             actAs: [actAsParty]
           }),
         });
-        return await res.json();
+        // No `res.ok` shortcut: the ledger answers 200 with an error envelope
+        // for a rejected command, while 4xx means the request itself was bad.
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(`JSON API v2 returned HTTP ${res.status}: ${JSON.stringify(data).slice(0, 200)}`);
+        if (data.errors) throw new Error(`Ledger rejected the command: ${JSON.stringify(data.errors).slice(0, 300)}`);
+        this.recordRemoteSuccess();
+        return (data.completionOffset ? data : data.result) as R;
       } else {
         const res = await fetch(`${this.config.jsonApiUrl}/v1/exercise`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ templateId, contractId, choice, argument }),
+          body: JSON.stringify({ templateId: qualified, contractId, choice, argument }),
         });
-        return await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.errors) {
+          const detail = data.errors ? JSON.stringify(data.errors).slice(0, 300) : `HTTP ${res.status}`;
+          // Surfaced, not swallowed: the dashboard shows why the real ledger
+          // refused, which is exactly what a simulator would hide.
+          throw new Error(`Ledger rejected ${choice} on ${templateId}: ${detail}`);
+        }
+        this.recordRemoteSuccess();
+        return (data.result ?? data) as R;
       }
     }
 

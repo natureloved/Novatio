@@ -13,6 +13,14 @@ interface ImportMetaEnv {
   readonly VITE_LEDGER_URL?: string;
   /** JSON Ledger API version: v1 (legacy /v1/query) or v2 (submit-and-wait) */
   readonly VITE_LEDGER_API_VERSION?: 'v1' | 'v2';
+  /**
+   * Bearer token for the local Canton dev node (scripts/canton-local.sh writes
+   * it to frontend/.env.local). It authenticates the browser against a JSON API
+   * bound to 127.0.0.1 and is not a production credential scheme.
+   */
+  readonly VITE_LEDGER_JWT?: string;
+  /** Optional Novatio package id. Discovered from the ledger when omitted. */
+  readonly VITE_LEDGER_PACKAGE_ID?: string;
 }
 
 interface ImportMeta {
