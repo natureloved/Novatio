@@ -87,5 +87,26 @@ else
 fi
 
 echo
+echo "=== [7/7] No bearer token in the repo or the bundle ==="
+# The dev JWT must exist in exactly one place: frontend/public/novatio-canton/
+# config.json, which is generated and gitignored. It must never be committed
+# (a judge clones the repo) nor baked into dist/assets/*.js (Vite inlines
+# import.meta.env at build time, so a VITE_LEDGER_JWT escapes into the bundle).
+#
+# An unsigned "alg: none" JWT decodes to a base64 payload starting like this,
+# so grep for the prefix rather than whole tokens.
+LEAKED_COMMITTED=$(git grep -l "eyJhbGciOiAibm9uZSIsICJ0eXAiOiAiSldUIn0" 2>/dev/null | grep -v "^scripts/verify.sh")
+[ -z "$LEAKED_COMMITTED" ]; chk $? "no dev JWT committed to the repo"
+if [ -n "$LEAKED_COMMITTED" ]; then printf '%s\n' "$LEAKED_COMMITTED" | sed 's/^/    leaked in: /'; fi
+LEAKED_BUNDLE=$(grep -rl "eyJhbGciOiAibm9uZSIsICJ0eXAiOiAiSldUIn0" frontend/dist/assets 2>/dev/null)
+[ -z "$LEAKED_BUNDLE" ]; chk $? "no dev JWT baked into the bundle"
+if [ -n "$LEAKED_BUNDLE" ]; then printf '%s\n' "$LEAKED_BUNDLE" | sed 's/^/    leaked in: /'; fi
+if git ls-files --error-unmatch frontend/public/novatio-canton/config.json >/dev/null 2>&1; then
+  no "generated runtime config must stay untracked (gitignored)"
+else
+  ok "generated runtime config is untracked"
+fi
+
+echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

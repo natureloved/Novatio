@@ -14,9 +14,12 @@ interface ImportMetaEnv {
   /** JSON Ledger API version: v1 (legacy /v1/query) or v2 (submit-and-wait) */
   readonly VITE_LEDGER_API_VERSION?: 'v1' | 'v2';
   /**
-   * Bearer token for the local Canton dev node (scripts/canton-local.sh writes
-   * it to frontend/.env.local). It authenticates the browser against a JSON API
-   * bound to 127.0.0.1 and is not a production credential scheme.
+   * Bearer token for the local Canton dev node. Build-time only and now
+   * redundant: `scripts/canton-local.sh` writes the same value to
+   * frontend/public/novatio-canton/config.json, which the app fetches at
+   * runtime, so the token never enters the bundle. Prefer the runtime config.
+   * Setting this here authenticates the browser against a JSON API bound to
+   * 127.0.0.1 and is not a production credential scheme.
    */
   readonly VITE_LEDGER_JWT?: string;
   /** Optional Novatio package id. Discovered from the ledger when omitted. */
