@@ -5,6 +5,13 @@
  * Includes an authentic multi-party participant isolation engine for local evaluation.
  */
 
+/**
+ * Daml module every Novatio template lives in. Template ids the JSON API
+ * accepts are `<packageId>:<Module>:<Template>`, so a caller passing 'Cash'
+ * has to be given the module this way rather than guessing.
+ */
+const DAML_MODULE = 'Novatio';
+
 export interface Contract<T = any> {
   contractId: string;
   templateId: string;
@@ -242,14 +249,23 @@ export class CantonLedgerClient {
   }
 
   /**
-   * Qualifies a template id, awaiting package-id discovery if it has not
-   * resolved yet. `queryContracts` cannot be async-cached without changing its
-   * signature, so this is the awaitable form used by `exerciseChoice`.
+   * Builds a fully-qualified template id: `<packageId>:<Module>:<Template>`.
+   *
+   * Callers pass bare names ('Cash'), the module-scoped form
+   * ('Novatio:Cash'), or an already-qualified id. The JSON API needs all
+   * three parts: `<pkg>:Cash` is rejected as malformed, not merely
+   * unresolved, which is how this bug first showed up. Awaiting package
+   * discovery is the async-safe form used by `exerciseChoice` and
+   * `queryContracts`.
    */
   private async ensureQualifiedAsync(templateId: string): Promise<string> {
+    const probe = await this.resolvePackageId();
+    const pkg = probe ?? this.config.packageId;
+    // Already `<pkg>:Module:Template` - leave it alone.
     if (templateId.split(':').length >= 3) return templateId;
-    const pkg = await this.resolvePackageId();
-    return pkg ? `${pkg}:${templateId}` : templateId;
+    // `Module:Template` or bare `Template` - join with the discovered package.
+    const body = templateId.includes(':') ? templateId : `${DAML_MODULE}:${templateId}`;
+    return pkg ? `${pkg}:${body}` : body;
   }
 
   /**

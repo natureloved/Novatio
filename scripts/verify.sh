@@ -50,7 +50,25 @@ if command -v google-chrome >/dev/null 2>&1 && [ -f scripts/mobile-probe-dashboa
     # Every phone width must report exactly 0 page-level overflow.
     OVERFLOWS=$(printf '%s\n' "$OUT" | grep -oE "overflowX=\s*[0-9]+" | grep -oE "[0-9]+" | grep -v "^0$" | wc -l)
     [ "$OVERFLOWS" -eq 0 ]; chk $? "no horizontal overflow at phone widths"
-    echo "$OUT" | grep -q "DASHBOARD_BADGE: SIMULATED"; chk $? "dashboard badge still honest (SIMULATED)"
+    # The badge must reflect reality, not a hardcoded word. Two rules:
+    #   1. it must say LIVE or SIMULATED - never neither (badge broken)
+    #   2. if a dev ledger was reachable when the bundle was built, it must say
+    #      LIVE; otherwise it must say SIMULATED. The test cannot start a Canton
+    #      node, so it compares against what the built bundle was configured
+    #      for rather than assuming one.
+    BADGE=$(printf '%s\n' "$OUT" | grep -oE "DASHBOARD_BADGE: (LIVE|SIMULATED)" | head -1 | awk '{print $2}')
+    if [ -z "$BADGE" ]; then
+      chk 1 "dashboard badge is present and readable"
+    else
+      echo "    (badge reports: $BADGE)"
+      # Was the built bundle pointed at a ledger that answered at build time?
+      if grep -q "VITE_LEDGER_URL" frontend/.env.local 2>/dev/null && \
+         curl -sf -o /dev/null -m 3 "$(grep '^VITE_LEDGER_URL=' frontend/.env.local | cut -d= -f2)/readyz" 2>/dev/null; then
+        [ "$BADGE" = "LIVE" ]; chk $? "dashboard reads LIVE because the ledger answered"
+      else
+        [ "$BADGE" = "SIMULATED" ]; chk $? "dashboard reads SIMULATED when no ledger is reachable"
+      fi
+    fi
     rm -f "$PROBE_TMP"
     PREVIEW_PID=$(pgrep -f "vite preview --port 4179" | head -1)
     [ -n "$PREVIEW_PID" ] && kill "$PREVIEW_PID" 2>/dev/null
