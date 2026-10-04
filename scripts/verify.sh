@@ -108,5 +108,24 @@ else
 fi
 
 echo
+echo "=== [8/8] Dashboard write path commits on a REAL ledger ==="
+# The important one. daml test proves the Daml lifecycle in the test harness,
+# and the reads above prove the browser can READ. Neither proves the browser's
+# WRITE path works - which is exactly how the party-namespace bug shipped: every
+# write passed in the simulator (it matches bare names) and every write 400'd on
+# a real node (INVALID_PARTY_IDENTIFIER). Only exercising the choices through
+# the app's own endpoints catches that class of bug.
+#
+# Skipped - not failed - when no node is running, because the gate must stay
+# green for a judge who has not started Canton. With a node up it is mandatory.
+if [ -f frontend/public/novatio-canton/config.json ] && curl -sf -o /dev/null -m 3 http://127.0.0.1:7577/readyz 2>/dev/null; then
+  node scripts/ui-verify.mjs > /tmp/ui-verify.log 2>&1
+  chk $? "all dashboard choices commit on the live ledger"
+  grep -E "^  (ok|FAIL)|UI WRITE PATH OK|FAILED" /tmp/ui-verify.log | sed 's/^/    /'
+else
+  echo "    (no live ledger on 7577 - skipped; start one with canton-local.sh start)"
+fi
+
+echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

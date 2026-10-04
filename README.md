@@ -171,9 +171,31 @@ Notes on this path:
 - The JSON API rejects cross-origin browser requests (no `Access-Control-*`
   headers, and a 404 on `OPTIONS`), so `scripts/cors-proxy.py` sits in front of
   it and `VITE_LEDGER_URL` points at the proxy.
+- Party names are qualified before they cross the wire. Canton needs
+  `<name>::<namespace>` in every choice argument, and a bare display name is
+  rejected with `INVALID_PARTY_IDENTIFIER`. The namespace changes on every fresh
+  node, so the client reads it from `GET /v1/parties` at runtime rather than
+  hardcoding it.
 - **The hosted/deployed URL shows SIMULATED.** The live node binds `127.0.0.1`
   only, so a visitor to the remote site has no ledger to reach. Connect the
   proxy, or deploy a participant, to demo a live ledger.
+
+### D. Verifying the WRITE path, not just reads
+
+Reads working is not a product. `scripts/verify.sh` therefore drives every
+dashboard action — register, co-sign, atomic DvP, settle, remit, audit — against
+the real ledger, and fails if any is rejected:
+
+```bash
+node scripts/ui-verify.mjs            # replay the UI's own request sequence
+python3 scripts/lifecycle-check.py    # same flow, driven step by step with assertions
+```
+
+This caught the party-namespace bug: the local simulator matched bare party
+names, so every button "worked" in the simulator, while the real node rejected
+each write with `INVALID_PARTY_IDENTIFIER`. `scripts/verify.sh` runs this
+automatically as step 8 whenever a ledger is up, and skips it (rather than
+failing) when no node is running.
 
 ---
 

@@ -131,14 +131,20 @@ canton {
 CANTON_CONF
 
   # Nodes must be started before they resolve by name, hence nodes.local.start().
+  #
+  # Allocation only: `parties.enable` is the whole step, and re-enabling an
+  # existing party is a CommandFailure, so this runs exactly once per fresh
+  # node. Do not add a `parties.list`-based re-check here - on this console
+  # group `parties.list` returns ListPartiesResult entries keyed by the
+  # PARTICIPANT id, not by the business parties, so it cannot verify what we
+  # want and silently reports every business party as "missing".
   cat > "$BOOTSTRAP_FILE" <<BOOTSTRAP_SCRIPT
 nodes.local.start()
 val participant = participants.local.head
-val domain = domains.local.head
-participant.domains.connect_local(domain)
+participant.domains.connect_local(domains.local.head)
 participant.dars.upload("$DAR")
-Seq("Central_Reserve_Bank","Acme_Electronics","Global_Motors_OEM","Canton_Capital_Desk","Regulatory_Observer").foreach { p =>
-  try { participant.parties.enable(p) } catch { case _: Throwable => }
+Seq("Central_Reserve_Bank","Acme_Electronics","Global_Motors_OEM","Canton_Capital_Desk","Regulatory_Observer").foreach { name =>
+  participant.parties.enable(name)
 }
 println("BOOTSTRAP_COMPLETE")
 BOOTSTRAP_SCRIPT
@@ -156,7 +162,7 @@ BOOTSTRAP_SCRIPT
     kill -0 "$canton_pid" 2>/dev/null || { log "Canton exited - see $CANTON_LOG"; tail -5 "$CANTON_LOG"; return 1; }
     sleep 1
   done
-  grep -q "BOOTSTRAP_COMPLETE" "$CANTON_LOG" || { log "Canton not ready - see $CANTON_LOG"; return 1; }
+  grep -q "BOOTSTRAP_COMPLETE" "$CANTON_LOG" || { log "Canton not ready - see $CANTON_LOG"; tail -5 "$CANTON_LOG"; return 1; }
   log "Canton ready (pid $canton_pid)"
 
   log "starting JSON Ledger API on 127.0.0.1:$JSONAPI_PORT"

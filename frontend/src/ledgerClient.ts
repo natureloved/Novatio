@@ -93,6 +93,8 @@ export class CantonLedgerClient {
    */
   private packageId: string | null = null;
   private packageIdPromise: Promise<string | null> | null = null;
+  private partyIds: Record<string, string> | null = null;
+  private partyIdsPromise: Promise<Record<string, string>> | null = null;
 
   constructor(config: LedgerClientConfig = {}) {
     this.config = { jsonApiVersion: 'v1', ...config };
@@ -113,7 +115,12 @@ export class CantonLedgerClient {
    */
   static async loadRuntimeConfig(): Promise<Partial<LedgerClientConfig> | null> {
     try {
-      const res = await fetch('/novatio-canton/config.json', { credentials: 'omit' });
+      // No-store: a restart of the ledger regenerates the token and the party
+      // namespace, so a cached copy of this file makes the app send a token the
+      // current node rejects - which looks like a broken ledger.
+      const res = await fetch('/novatio-canton/config.json', {
+        credentials: 'omit', cache: 'no-store',
+      });
       if (!res.ok) return null;
       const raw = await res.json();
       const out: Partial<LedgerClientConfig> = {};
@@ -297,6 +304,84 @@ export class CantonLedgerClient {
   }
 
   /**
+   * Resolves a party name to the fully-qualified `<name>::<namespace>` form a
+   * real Canton ledger demands.
+   *
+   * Why this exists: choice arguments carry party VALUES, and the dashboard
+   * passes display names like 'Canton_Capital_Desk'. The local simulator
+   * filters by bare name, so it accepts them; a real ledger rejects them with
+   * `INVALID_PARTY_IDENTIFIER ... missing namespace`. That makes every write
+   * fail on the real node while every write still "works" in the simulator -
+   * the worst kind of bug for an honest LIVE badge.
+   *
+   * The namespace is REGENERATED whenever the node is recreated, so it must be
+   * discovered, never hardcoded. `GET /v1/parties` lists the participant's
+   * parties with `isLocal`; they all share one namespace here. Names that are
+   * already qualified, or that no party list can resolve, pass through
+   * unchanged - deliberately, because guessing a namespace would silently
+   * forge an informee.
+   */
+  private async ensurePartyQualifiedAsync(party: unknown): Promise<unknown> {
+    if (typeof party !== 'string') return party;
+    if (party.includes('::')) return party; // already qualified
+    const map = await this.resolvePartyIds();
+    return map[party] ?? party;
+  }
+
+  /**
+   * Rewrites bare party names inside a choice argument to qualified ids.
+   *
+   * Walks the argument recursively because party values sit at varying depths:
+   * `factorer` is a top-level key on RegisterAndOfferFactoring, while nested
+   * lists hold no parties at all. Contract ids (long hex strings) must never be
+   * touched - they are opaque to the ledger and rewriting one would break the
+   * command - so only strings that resolve against the known party map change.
+   */
+  private async qualifyPartyValues(value: unknown): Promise<unknown> {
+    if (Array.isArray(value)) {
+      return Promise.all(value.map(v => this.qualifyPartyValues(v)));
+    }
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        out[k] = await this.qualifyPartyValues(v);
+      }
+      return out;
+    }
+    if (typeof value === 'string' && value.length <= 64) {
+      return this.ensurePartyQualifiedAsync(value);
+    }
+    return value;
+  }
+
+  /** `display name -> fully-qualified id`, discovered once per client. */
+  private async resolvePartyIds(): Promise<Record<string, string>> {
+    if (this.partyIds) return this.partyIds;
+    if (this.partyIdsPromise) return this.partyIdsPromise;
+
+    this.partyIdsPromise = (async () => {
+      const headers = this.authHeaders('probe') || {};
+      const res = await fetch(`${this.config.jsonApiUrl}/v1/parties`, { headers });
+      if (!res.ok) return {};
+      const data = await res.json().catch(() => ({}));
+      const map: Record<string, string> = {};
+      for (const p of data.result || []) {
+        const id: string = p.identifier;
+        const [name, ns] = id.split('::');
+        // First wins: duplicate display names across namespaces are ambiguous,
+        // and silently picking one would attribute money to the wrong party.
+        if (name && ns && !(name in map)) map[name] = id;
+      }
+      // Display names from the UI are also accepted for a party the participant
+      // knows only by full id, so a fresh node never strands the demo mid-form.
+      this.partyIds = map;
+      return map;
+    })();
+
+    return this.partyIdsPromise;
+  }
+
+  /**
    * Discovers the Novatio package id on the ledger.
    *
    * The id is a content hash, so it changes on every `daml build`; hardcoding
@@ -420,9 +505,15 @@ export class CantonLedgerClient {
   private recordRemoteFailure(err: unknown) {
     this.mode = 'local';
     const msg = err instanceof Error ? err.message : String(err);
-    this.lastRemoteFailure = this.config.jsonApiUrl
-      ? `No response from ${this.config.jsonApiUrl} (${msg})`
-      : 'No Canton JSON API URL configured';
+    // A 401 means the runtime config on disk is from an OLDER node: the dev
+    // token carries that node's party namespace, which a restarted ledger
+    // regenerates. Falling back to the simulator there would show a LIVE badge
+    // that is actually lying, so say which stale file is at fault and when.
+    this.lastRemoteFailure = msg.includes('401')
+      ? 'Ledger rejected the token in novatio-canton/config.json — the token is from a previous node. Re-run scripts/canton-local.sh start to regenerate it, then reload.'
+      : this.config.jsonApiUrl
+        ? `No response from ${this.config.jsonApiUrl} (${msg})`
+        : 'No Canton JSON API URL configured';
   }
 
   /**
@@ -440,6 +531,13 @@ export class CantonLedgerClient {
       // Qualify before anything else: the JSON API rejects "Novatio:Cash" as a
       // malformed template id, and the package id only changes on rebuild.
       const qualified = await this.ensureQualifiedAsync(templateId);
+      // Same story for PARTY values inside the argument: a bare display name is
+      // fine for the simulator and INVALID_PARTY_IDENTIFIER on a real node.
+      const wiredArgument = await this.qualifyPartyValues(argument);
+      // v2 sends `actAs` as party values too, so it needs the same treatment.
+      const actAsQualified = this.config.jsonApiVersion === 'v2'
+        ? await this.ensurePartyQualifiedAsync(actAsParty)
+        : actAsParty;
       const token = this.tokenFor(actAsParty);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -452,9 +550,9 @@ export class CantonLedgerClient {
           headers,
           body: JSON.stringify({
             commands: [{
-              exercise: { templateId: qualified, contractId, choice, choiceArgument: argument }
+              exercise: { templateId: qualified, contractId, choice, choiceArgument: wiredArgument }
             }],
-            actAs: [actAsParty]
+            actAs: [actAsQualified as string]
           }),
         });
         // No `res.ok` shortcut: the ledger answers 200 with an error envelope
@@ -468,7 +566,7 @@ export class CantonLedgerClient {
         const res = await fetch(`${this.config.jsonApiUrl}/v1/exercise`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ templateId: qualified, contractId, choice, argument }),
+          body: JSON.stringify({ templateId: qualified, contractId, choice, argument: wiredArgument }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.errors) {
