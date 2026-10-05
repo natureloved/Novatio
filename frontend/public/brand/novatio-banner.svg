@@ -53,12 +53,9 @@
           stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
-  <!-- wordmark, y 108..192: Fraunces is the site's display serif -->
-  <text x="202" y="160" font-family="Georgia, 'Times New Roman', serif" font-size="66"
-        font-weight="600" letter-spacing="-1.6" fill="#F6F3EC">Novatio</text>
-  <!-- descriptor: monospace, the site's technical register -->
-  <text x="204" y="196" font-family="'JetBrains Mono', Menlo, Consolas, monospace"
-        font-size="19" letter-spacing="4.6" fill="#C9A75C">CANTON NETWORK</text>
+  <!-- wordmark: geometric sans-serif, replaces the serif 'Novatio' -->
+  <text x="202" y="160" font-family="Chakra Petch, 'Trebuchet MS', Helvetica, Arial, sans-serif" font-size="66" font-weight="700" letter-spacing="-1.2" fill="#F6F3EC">NOVATIO</text>
+  <text x="204" y="196" font-family="'JetBrains Mono', Menlo, Consolas, monospace" font-size="19" letter-spacing="4.6" fill="#C9A75C">CANTON NETWORK</text>
 
   <!-- HEADLINE line 1, y 244..330 -->
   <text x="88" y="318" font-family="Georgia, 'Times New Roman', serif" font-size="82"
@@ -78,7 +75,7 @@
     <rect x="316" y="473" width="252" height="40" rx="20" fill="none" stroke="#D9D2C2" stroke-width="1.5"/>
     <text x="336" y="499" fill="#2B3A55">SUB-TX PRIVACY</text>
     <rect x="584" y="473" width="212" height="40" rx="20" fill="none" stroke="#D9D2C2" stroke-width="1.5"/>
-    <text x="604" y="499" fill="#2B3A55">DAML</text>
+    <text x="604" y="499" fill="#2B3A55">SINGLE-WRITER</text>
   </g>
 
   <!-- CURVE BAND, y 499..618. Three arcs at decreasing amplitude, echoing the
