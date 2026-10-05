@@ -353,7 +353,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
           <div className="brand-mark" style={{ width: '32px', height: '32px' }}>
             <NovatioMark size={26} />
           </div>
-          <span className="serif" style={{ fontSize: '20px', fontWeight: 600, color: 'var(--ink)' }}>
+          <span className="wordmark" style={{ fontSize: '20px', color: 'var(--ink)' }}>
             Novatio
           </span>
         </div>

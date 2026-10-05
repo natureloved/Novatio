@@ -1,0 +1,26 @@
+/*
+ * The wordmark typeface, self-hosted.
+ *
+ * Why this file exists rather than a Google Fonts <link>:
+ * the wordmark is the one element whose legibility cannot degrade gracefully.
+ * Fraunces/Inter/JetBrains Mono fall back to system serif/sans/mono and the
+ * product still reads; if "NOVATIO" falls back to a default sans it stops
+ * looking like a wordmark at all. A blocked or slow third-party CDN must not
+ * be able to do that, so the font ships with the app.
+ */
+
+@font-face {
+  font-family: 'Chakra Petch';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/chakrapetch-700.ttf') format('truetype');
+}
+
+/* The shared axis for anything that says the product name in type. */
+.wordmark {
+  font-family: 'Chakra Petch', 'Exo 2', 'Trebuchet MS', Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}

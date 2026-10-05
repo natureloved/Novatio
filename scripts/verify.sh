@@ -127,5 +127,37 @@ else
 fi
 
 echo
+echo "=== [9/9] Wordmark font renders in a REAL browser ==="
+# A static file check proves the .ttf is in the bundle and the @font-face rule
+# is in the CSS. It does NOT prove the browser actually fetched and applied the
+# font, which is the failure that ships: a class name typo, a CSS import the
+# bundler dropped, or a path the dev server rewrites all produce a green static
+# check with a visually broken lockup. So drive a real headless Chrome over CDP
+# and assert document.fonts.check() is true and a .wordmark element resolved.
+if [ "${SKIP_BROWSER:-0}" = "1" ]; then
+  echo "    (SKIP_BROWSER=1 - skipped)"
+else
+  bash scripts/start-cdp-chrome.sh 9244 >/dev/null 2>&1
+  if [ -d frontend/dist ]; then
+    APP_URL="http://127.0.0.1:4178/"
+    if ! curl -sf -o /dev/null -m 3 "$APP_URL" 2>/dev/null; then
+      (npx --yes serve -s frontend/dist -l 4178 >/tmp/serve-dist.log 2>&1 &)
+      for _ in $(seq 1 20); do
+        sleep 0.5
+        curl -sf -o /dev/null -m 3 "$APP_URL" 2>/dev/null && break
+      done
+    fi
+    python3 scripts/verify-wordmark-font.py 9244 "$APP_URL" > /tmp/wordmark-font.log 2>&1
+    rc=$?
+    tail -1 /tmp/wordmark-font.log | sed 's/^/    /'
+    grep -E "lockup element|font requests" /tmp/wordmark-font.log | sed 's/^/    /' | cut -c1-150
+    if [ $rc -eq 0 ]; then chk 0 "wordmark font loaded and applied in a real browser"
+    else cat /tmp/wordmark-font.log | sed 's/^/    /'; chk 1 "wordmark font loaded and applied in a real browser"; fi
+  else
+    echo "    (no frontend/dist - run the frontend build first; skipped)"
+  fi
+fi
+
+echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

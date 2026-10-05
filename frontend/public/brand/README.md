@@ -31,6 +31,36 @@ the name.
 | `novatio-banner.svg` / `../novatio-banner.png` | 1200x630 social card. Band plan documented in the SVG's header comment. |
 | `../favicon-{16,32,48,180}.png` | Browser-requested favicon sizes and apple-touch. |
 
+### Seal vs wordmark
+
+The **seal** (`novatio-mark.svg`) encodes the invariant — three invoice lines,
+one gate, one outgoing path — and is the mark that lives in the favicon and all
+16–32px placements, where letterforms are unreadable.
+
+The **wordmark** (`novatio-wordmark.svg`) spells the product name, so the brand
+identity is legible at a glance. The earlier revision shipped the seal alone and
+it did not communicate what Novatio is; the wordmark fixes that.
+
+Both share one palette, so they are unambiguously the same brand.
+
+### The wordmark is vector, not webfont text
+
+The banner's wordmark is extruded Orbitron Bold converted to solid polygons
+(`novatio-wordmark.svg`, embedded into `novatio-banner.svg`), NOT `<text>` with
+a `font-family`. Reason: the app loads Fraunces, Inter and JetBrains Mono, so a
+`font-family` in a social card would silently fall back on every crawler, and
+the rasterized og:image would not match what a human sees in the browser.
+Vector polygons render identically in Chrome, Firefox, Telegram's scraper and
+Facebook's debugger.
+
+The in-app lockup uses **Chakra Petch** (self-hosted, `frontend/public/fonts/`)
+as the wordmark register, so the app and the card read as the same voice.
+Chakra Petch is self-hosted while Fraunces/Inter/JetBrains Mono stay on the
+Google CDN: the one element whose legibility must not degrade is the wordmark,
+and a blocked third-party CDN is not a risk worth taking with the product name.
+Verify with `scripts/verify-wordmark-font.py` (drives a real Chrome over CDP;
+also step 9 of `verify.sh`).
+
 ## Palette
 
 Taken from `frontend/src/index.css` hex-for-hex, so the brand and the product

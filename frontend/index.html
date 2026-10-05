@@ -34,7 +34,20 @@
     <meta name="twitter:description" content="Confidential RWA factoring on Canton Network with single-writer deduplication and atomic Delivery vs Payment." />
     <meta name="twitter:image" content="https://novatio-henna.vercel.app/novatio-banner.png" />
     <meta name="twitter:image:alt" content="Novatio: One invoice. One writer. Receivables that cannot be pledged twice." />
-    <!-- Institutional Typography -->
+    <!--
+      Institutional Typography.
+      Fraunces: the product's display serif (headlines, prose).
+      Inter: UI text.
+      JetBrains Mono: technical register (amounts, party ids, badges).
+
+      Chakra Petch is the WORDMARK register: the app-side counterpart of the
+      Orbitron Bold vector wordmark in public/brand/, so the in-app logo lockup
+      and the social card read as the same voice. It is SELF-HOSTED (see the
+      @font-face in src/brand/wordmark.css) because a prompt render of the
+      wordmark is exactly the thing a blocked third-party CDN must not break.
+      Fraunces/Inter/JetBrains Mono stay on the Google CDN: they are display
+      and body faces where a system-font fallback degrades gracefully.
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">

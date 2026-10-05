@@ -71,7 +71,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
         <div className="wrap nav-in">
           <div className="brand">
             <NovatioMark size={30} />
-            Novatio
+            <span className="wordmark" style={{ fontSize: '20px', color: 'var(--ink)' }}>Novatio</span>
           </div>
 
           {/* Desktop Nav Links */}
@@ -562,7 +562,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
         <div className="wrap foot-in">
           <div className="mark">
             <NovatioMark size={22} />
-            Novatio Protocol
+            <span className="wordmark">Novatio</span>
+            <span style={{ color: 'var(--gold)', fontWeight: 400 }}>Protocol</span>
           </div>
           <div className="foot-links">
             <a href="#problem">Problem</a>

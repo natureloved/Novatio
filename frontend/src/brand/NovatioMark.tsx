@@ -107,10 +107,8 @@ export function NovatioLockup({
   return (
     <span className={className} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
       <NovatioMark size={size} tone={tone} />
-      <span className="serif" style={{
+      <span className="wordmark" style={{
         fontSize: `${Math.round(size * 0.62)}px`,
-        fontWeight: 600,
-        letterSpacing: '-0.01em',
         color: tone === 'light' ? 'var(--ink)' : 'var(--paper)',
       }}>
         {label}
