@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npx tsx test-ledger.ts",
+    "test:ledger": "npx tsx test-ledger.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
