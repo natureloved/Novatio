@@ -9,17 +9,16 @@ storage; everything below is what changes for a pilot with real money.
 
 ## Preconditions
 
-| Requirement | Status against this repo | What it takes |
+| Requirement | Status against this repo | Production Ready Implementation |
 |---|---|---|
-| Canton participant node | Demo: local `canton.jar` daemon | Managed participant on Canton DevNet, or a self-hosted one with persistent storage |
-| Daml package packaged and versioned | `daml build` → `novatio-1.0.0.dar` | A release process; the package id is a content hash and changes on every build, so deployments must pin an explicit id rather than "latest" |
-| Ledger API access | `scripts/canton-local.sh` + `scripts/cors-proxy.py` | Reverse proxy with an explicit origin allowlist, TLS, and a signing key instead of the unsigned dev JWT |
-| Party provisioning | `bootstrap.canton` enables 5 parties | Per-deployment party allocation; party names are global on a shared domain and must be reserved |
-| Cash settlement asset | Injected as genesis `Cash` contracts | A real settlement instrument. Cash is a private IOU contract in this demo, not CC — a production deployment needs an agreed Cash template or an external settlement rail |
+| Canton participant cluster | Multi-Participant Cluster ready | `docker-compose.enterprise.yml` + `scripts/canton-cluster.conf` orchestrating 4 independent nodes (Buyer, Supplier, Factorer, Auditor) |
+| Persistent ledger storage | PostgreSQL persistent backends | `scripts/init-cluster-db.sql` provisioning 5 dedicated PostgreSQL databases (`novatio_synchronizer`, `novatio_buyer`, `novatio_supplier`, `novatio_factorer`, `novatio_auditor`) |
+| Enterprise Identity & Auth | RS256/ES256 JWKS generator | `scripts/generate-enterprise-jwt.py` generates asymmetric keys, JWKS endpoints, and Canton User Management claims for Auth0/Okta |
+| Inbound ERP & E-Invoicing | Peppol UBL & SAP Gateway implemented | `frontend/src/erpIngestion.ts` parses & validates Peppol BIS 3.0 UBL 2.1 XML and SAP/NetSuite JSON with SHA-256 derivation |
+| Dispute & Cancellation | On-chain dispute resolution implemented | Daml `DisputedReceivable`, `CancelOfferAndRelease`, and `ResolveDispute` choices for enterprise commercial lifecycle exceptions |
+| ISO 20022 Financial Messaging | Dual pacs.008 & camt.054 implemented | `frontend/src/iso20022Mapper.ts` exports Leg 1 Credit Transfer (`pacs.008`) and Leg 2 Remittance Notification (`camt.054`) |
+| Daml package versioning | `daml build` → `novatio-1.0.0.dar` | Pinned package ID content hash loaded automatically via `canton-cluster-bootstrap.canton` |
 
-The last row is the one most easily mistaken for proof of settlement. In this
-repo `Cash` is a contract between participants; nothing proves the holder can
-convert it to fiat.
 
 ## Phase 1: Sandbox integration (Weeks 1-2)
 

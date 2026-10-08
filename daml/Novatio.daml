@@ -133,6 +133,19 @@ template NovationRegistry
          create this with
            registeredInvoices = registeredInvoices \\ [settled.invoiceNumber]
 
+    -- | Cancels an unaccepted FactoringOffer and releases the invoice from the registry.
+    choice CancelOfferAndRelease : ContractId NovationRegistry
+      with
+        offerCid : ContractId FactoringOffer
+      controller buyer
+      do
+        offer <- fetch offerCid
+        assertMsg "Only the buyer who issued the offer can cancel it" (offer.buyer == buyer)
+        assertMsg "Invoice is not in active registry" (offer.invoiceNumber `elem` registeredInvoices)
+        archive offerCid
+        create this with
+          registeredInvoices = registeredInvoices \\ [offer.invoiceNumber]
+
 -- | 3. Factoring Offer (Awaiting Supplier Acceptance to establish multi-party authority)
 -- Fixes Blocker A: Buyer signs the offer; Supplier accepts to co-sign FinanceableReceivable.
 -- Supplier re-derives and asserts cryptographic commitment hash against CommercialInvoice.
@@ -285,6 +298,30 @@ template NovatedReceivable
           commitmentHash = invoiceHash
           isSettled = False
 
+    -- Commercial Dispute Choice: Buyer flags defective shipment or billing dispute
+    choice RaiseDispute : ContractId DisputedReceivable
+      with
+        disputeReason : Text
+        disputedAmount : Decimal
+      controller buyer
+      do
+        assertMsg "Disputed amount must be positive" (disputedAmount > 0.0)
+        assertMsg "Disputed amount cannot exceed total face value" (disputedAmount <= totalAmount)
+        create DisputedReceivable with
+          buyer
+          supplier
+          factorer
+          invoiceNumber
+          totalAmount
+          advanceAmount
+          reserveAmount
+          discountFee
+          disputedAmount
+          disputeReason
+          dueDate
+          invoiceHash
+          auditor
+
 -- | 6. Settled Obligation (Survives for permanent compliance audit trail)
 template SettledObligation
   with
@@ -332,3 +369,45 @@ template SettledObligation
           verifiedAmount = totalAmount
           commitmentHash = invoiceHash
           isSettled = True
+
+-- | 7. Disputed Receivable (Locks factoring settlement pending commercial dispute resolution)
+template DisputedReceivable
+  with
+    buyer : Party
+    supplier : Party
+    factorer : Party
+    invoiceNumber : Text
+    totalAmount : Decimal
+    advanceAmount : Decimal
+    reserveAmount : Decimal
+    discountFee : Decimal
+    disputedAmount : Decimal
+    disputeReason : Text
+    dueDate : Time
+    invoiceHash : Text
+    auditor : Party
+  where
+    signatory buyer, factorer
+    observer supplier, auditor
+
+    -- Joint resolution: factorer accepts adjusted settlement terms or resolves dispute
+    choice ResolveDispute : ContractId NovatedReceivable
+      with
+        resolvedAmount : Decimal
+      controller factorer
+      do
+        assertMsg "Resolved amount must be positive" (resolvedAmount > 0.0)
+        assertMsg "Resolved amount cannot exceed total amount" (resolvedAmount <= totalAmount)
+        let resolvedReserve = resolvedAmount - advanceAmount
+        create NovatedReceivable with
+          buyer
+          supplier
+          factorer
+          invoiceNumber
+          totalAmount = resolvedAmount
+          advanceAmount
+          reserveAmount = resolvedReserve
+          discountFee
+          dueDate
+          invoiceHash
+          auditor

@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { NovatioMark } from './brand/NovatioMark';
 import { CantonLedgerClient, Contract, AuditReport, TransactionEvent } from './ledgerClient';
-import { generatePacs008Xml, downloadPacs008Xml } from './iso20022Mapper';
+import { generatePacs008Xml, downloadPacs008Xml, generateCamt054Xml, downloadCamt054Xml } from './iso20022Mapper';
+import {
+  parsePeppolUblXml,
+  parseEnterpriseJson,
+  validateInvoiceIntegrity,
+  deriveCommitmentHash,
+  ParsedCommercialInvoice,
+  SAMPLE_ENTERPRISE_INVOICES
+} from './erpIngestion';
 
 export type Role = 'BUYER' | 'SUPPLIER' | 'FACTORER' | 'AUDITOR';
-export type DashboardTab = 'overview' | 'receivables' | 'settlement' | 'split-privacy' | 'audit';
+export type DashboardTab = 'overview' | 'receivables' | 'settlement' | 'split-privacy' | 'audit' | 'erp-gateway';
 
 interface DashboardProps {
   ledger: CantonLedgerClient;
@@ -25,12 +33,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
   const [financeableReceivables, setFinanceableReceivables] = useState<Contract[]>([]);
   const [factoringOffers, setFactoringOffers] = useState<Contract[]>([]);
   const [novatedReceivables, setNovatedReceivables] = useState<Contract[]>([]);
+  const [disputedReceivables, setDisputedReceivables] = useState<Contract[]>([]);
   const [settledObligations, setSettledObligations] = useState<Contract[]>([]);
+  const [novationRegistries, setNovationRegistries] = useState<Contract[]>([]);
   const [cashContracts, setCashContracts] = useState<Contract[]>([]);
   const [cashBalance, setCashBalance] = useState<number>(0);
   const [events, setEvents] = useState<TransactionEvent[]>([]);
   const [factorerCommercialQueryCount, setFactorerCommercialQueryCount] = useState<number>(0);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
+
+  // ERP Gateway & Ingestion State
+  const [erpFormat, setErpFormat] = useState<'automotive' | 'aerospace' | 'custom'>('automotive');
+  const [erpPayloadText, setErpPayloadText] = useState<string>(SAMPLE_ENTERPRISE_INVOICES.automotive.xml);
+  const [parsedErpInvoice, setParsedErpInvoice] = useState<ParsedCommercialInvoice | null>(null);
+  const [erpValidationResult, setErpValidationResult] = useState<{ valid: boolean; error?: string } | null>(null);
+  const [erpDerivedHash, setErpDerivedHash] = useState<string>('');
+
+  // Commercial Dispute Modal State
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState<boolean>(false);
+  const [disputeReasonInput, setDisputeReasonInput] = useState<string>('Defective flight microcontroller batch (#404)');
+  const [disputeAmountInput, setDisputeAmountInput] = useState<string>('5000');
+  const [xmlModalType, setXmlModalType] = useState<'pacs008' | 'camt054'>('pacs008');
 
   /**
    * Connection truth, re-read on every state change.
@@ -87,8 +110,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
     const novated = await ledger.queryContracts('NovatedReceivable', partyName);
     setNovatedReceivables(novated);
 
+    const disputed = await ledger.queryContracts('DisputedReceivable', partyName);
+    setDisputedReceivables(disputed);
+
     const settled = await ledger.queryContracts('SettledObligation', partyName);
     setSettledObligations(settled);
+
+    const registries = await ledger.queryContracts('NovationRegistry', 'Global_Motors_OEM');
+    setNovationRegistries(registries);
 
     setEvents(ledger.getTransactionHistory());
   }, [ledger, role]);
@@ -100,6 +129,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
     });
     return () => unsubscribe();
   }, [role, ledger, refreshState]);
+
+  // ERP Parser & Hash derivation effect
+  useEffect(() => {
+    try {
+      const trimmed = erpPayloadText.trim();
+      let parsed: ParsedCommercialInvoice;
+      if (trimmed.startsWith('<')) {
+        parsed = parsePeppolUblXml(trimmed);
+      } else {
+        parsed = parseEnterpriseJson(trimmed);
+      }
+      setParsedErpInvoice(parsed);
+      const val = validateInvoiceIntegrity(parsed);
+      setErpValidationResult(val);
+      if (val.valid) {
+        deriveCommitmentHash(parsed.invoiceNumber, parsed.amount, parsed.dueDate).then(setErpDerivedHash);
+      } else {
+        setErpDerivedHash('');
+      }
+    } catch (err: any) {
+      setParsedErpInvoice(null);
+      setErpValidationResult({ valid: false, error: err.message });
+      setErpDerivedHash('');
+    }
+  }, [erpPayloadText]);
 
   // Workflow Handlers
   const handleRegister = async (commercialInvoiceCid: string) => {
@@ -254,6 +308,98 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
       );
     } catch (err: any) {
       addToast('error', `🛡️ CANTON INVARIANT CONFIRMED: ${err.message} (Double-remittance blocked!)`);
+    }
+  };
+
+  const handleReleaseSettledInvoice = async (settledCid: string) => {
+    try {
+      const registries = await ledger.queryContracts('NovationRegistry', 'Global_Motors_OEM');
+      if (registries.length === 0) throw new Error("No NovationRegistry found for Buyer");
+      await ledger.exerciseChoice(
+        'NovationRegistry',
+        registries[0].contractId,
+        'ReleaseSettledInvoice',
+        { settledCid },
+        'Global_Motors_OEM'
+      );
+      addToast('success', '✓ Settled invoice released from NovationRegistry. Restructuring / re-financing unlocked.');
+    } catch (err: any) {
+      addToast('error', `Release settled invoice failed: ${err.message}`);
+    }
+  };
+
+  const handleCancelOffer = async (offerCid: string) => {
+    try {
+      const registries = await ledger.queryContracts('NovationRegistry', 'Global_Motors_OEM');
+      if (registries.length === 0) throw new Error("No NovationRegistry found for Buyer");
+      await ledger.exerciseChoice(
+        'NovationRegistry',
+        registries[0].contractId,
+        'CancelOfferAndRelease',
+        { offerCid },
+        'Global_Motors_OEM'
+      );
+      addToast('success', '✓ FactoringOffer withdrawn: Invoice released from NovationRegistry.');
+    } catch (err: any) {
+      addToast('error', `Cancel offer failed: ${err.message}`);
+    }
+  };
+
+  const handleRaiseDisputeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (novatedReceivables.length === 0) return;
+    const amountNum = parseFloat(disputeAmountInput) || 5000;
+    try {
+      await ledger.exerciseChoice(
+        'NovatedReceivable',
+        novatedReceivables[0].contractId,
+        'RaiseDispute',
+        { disputeReason: disputeReasonInput, disputedAmount: amountNum },
+        'Global_Motors_OEM'
+      );
+      setIsDisputeModalOpen(false);
+      addToast('error', `⚠️ Commercial dispute raised on-ledger: "${disputeReasonInput}" ($${amountNum.toLocaleString()} disputed). Settlement locked.`);
+    } catch (err: any) {
+      addToast('error', `Dispute creation failed: ${err.message}`);
+    }
+  };
+
+  const handleResolveDispute = async (disputeCid: string) => {
+    if (disputedReceivables.length === 0) return;
+    const currentDispute = disputedReceivables[0];
+    const resolvedAmount = currentDispute.payload.totalAmount - (currentDispute.payload.disputedAmount || 0);
+    try {
+      await ledger.exerciseChoice(
+        'DisputedReceivable',
+        disputeCid,
+        'ResolveDispute',
+        { resolvedAmount },
+        'Canton_Capital_Desk'
+      );
+      addToast('success', `✓ Dispute resolved on-ledger. Receivable adjusted to $${resolvedAmount.toLocaleString()} USD and unlocked for settlement.`);
+    } catch (err: any) {
+      addToast('error', `Resolve dispute failed: ${err.message}`);
+    }
+  };
+
+  const handleIngestErpInvoice = () => {
+    if (!parsedErpInvoice || !erpValidationResult?.valid) {
+      addToast('error', 'Cannot ingest invalid invoice. Please fix validation errors.');
+      return;
+    }
+    try {
+      ledger.createCommercialInvoice({
+        invoiceNumber: parsedErpInvoice.invoiceNumber,
+        buyer: parsedErpInvoice.buyer,
+        supplier: parsedErpInvoice.supplier,
+        amount: parsedErpInvoice.amount,
+        dueDate: parsedErpInvoice.dueDate,
+        lineItems: parsedErpInvoice.lineItems,
+      });
+      addToast('success', `✓ Ingested ${parsedErpInvoice.format} invoice ${parsedErpInvoice.invoiceNumber} (${parsedErpInvoice.lineItems.length} lines, $${parsedErpInvoice.amount.toLocaleString()} USD) on Canton!`);
+      setActiveTab('overview');
+    } catch (err: any) {
+      addToast('error', `ERP ingestion failed: ${err.message}`);
     }
   };
 
@@ -422,6 +568,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
               <circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>
             </svg>
             Audit & ISO 20022
+          </button>
+
+          <button 
+            className={`nav-link ${activeTab === 'erp-gateway' ? 'active' : ''}`} 
+            onClick={() => { setActiveTab('erp-gateway'); setIsSidebarOpen(false); }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            ERP & Peppol Gateway
           </button>
         </nav>
 
@@ -675,7 +831,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                       <circle cx="12" cy="12" r="9"/><path d="M12 8 V16 M8 12 H16"/>
                     </svg>
                   </div>
-                  <div className="metric-value">${availableToFactor > 0 ? (availableToFactor / 1000).toFixed(0) + 'K' : '100K'}</div>
+                  <div className="metric-value">{availableToFactor > 0 ? `$${(availableToFactor / 1000).toFixed(0)}K` : '$0'}</div>
                   <div className="metric-foot">
                     <span className="trend">100%</span>
                     <span>eligible receivables</span>
@@ -689,7 +845,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                       <path d="M4 18.5h16M5.5 15l4-4 3 2.5 6-7"/>
                     </svg>
                   </div>
-                  <div className="metric-value">${capitalDeployed > 0 ? (capitalDeployed / 1000).toFixed(0) + 'K' : '$0'}</div>
+                  <div className="metric-value">{capitalDeployed > 0 ? `$${(capitalDeployed / 1000).toFixed(0)}K` : '$0'}</div>
                   <div className="metric-foot">
                     <span className="trend">85% Advance</span>
                     <span>T+0 cash disbursed</span>
@@ -887,16 +1043,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                         <td className="amount mono">$100,000.00</td>
                         <td>85.0% ($85k T+0)</td>
                         <td>
-                          {currentStep === 1 && <span className="status review">Invoice Issued</span>}
-                          {currentStep === 2 && <span className="status assent">Awaiting Supplier Assent</span>}
-                          {currentStep === 3 && <span className="status assent">Co-Signed · Awaiting DvP</span>}
-                          {currentStep === 4 && <span className="status settled">Novated (DvP Settled)</span>}
-                          {currentStep === 5 && <span className="status assent">Leg 1 Settled · Awaiting Remittance</span>}
-                          {currentStep === 6 && <span className="status settled">100% Settled & Remitted</span>}
+                          {disputedReceivables.length > 0 && <span className="status review" style={{ color: '#ef4444', borderColor: '#f87171' }}>⚠️ Dispute Active ($5k withheld)</span>}
+                          {disputedReceivables.length === 0 && currentStep === 1 && <span className="status review">Invoice Issued</span>}
+                          {disputedReceivables.length === 0 && currentStep === 2 && <span className="status assent">Awaiting Supplier Assent</span>}
+                          {disputedReceivables.length === 0 && currentStep === 3 && <span className="status assent">Co-Signed · Awaiting DvP</span>}
+                          {disputedReceivables.length === 0 && currentStep === 4 && <span className="status settled">Novated (DvP Settled)</span>}
+                          {disputedReceivables.length === 0 && currentStep === 5 && <span className="status assent">Leg 1 Settled · Awaiting Remittance</span>}
+                          {disputedReceivables.length === 0 && currentStep === 6 && <span className="status settled">100% Settled & Remitted</span>}
                         </td>
                         <td>
                           {/* Dynamic Action Buttons depending on role and stage */}
-                          {role === 'BUYER' && commercialInvoices.length > 0 && factoringOffers.length === 0 && financeableReceivables.length === 0 && novatedReceivables.length === 0 && settledObligations.length === 0 && (
+                          {role === 'BUYER' && commercialInvoices.length > 0 && factoringOffers.length === 0 && financeableReceivables.length === 0 && novatedReceivables.length === 0 && disputedReceivables.length === 0 && settledObligations.length === 0 && (
                             <button onClick={() => handleRegister(commercialInvoices[0].contractId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }}>
                               ⚡ Register & Offer
                             </button>
@@ -908,6 +1065,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                             </button>
                           )}
 
+                          {role === 'BUYER' && factoringOffers.length > 0 && financeableReceivables.length === 0 && (
+                            <button onClick={() => handleCancelOffer(factoringOffers[0].contractId)} className="btn-outline-danger" style={{ padding: '6px 12px', fontSize: '11px' }}>
+                              ✕ Cancel Offer
+                            </button>
+                          )}
+
                           {role === 'FACTORER' && financeableReceivables.length > 0 && (
                             <button onClick={() => handleFundAdvance(financeableReceivables[0].contractId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }}>
                               ⚡ Fund DvP ($85k)
@@ -915,9 +1078,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                           )}
 
                           {role === 'BUYER' && novatedReceivables.length > 0 && (
-                            <button onClick={() => handleSettleLeg1(novatedReceivables[0].contractId)} className="btn-settle" style={{ padding: '6px 12px', fontSize: '11px' }}>
-                              ⚡ Settle Leg 1 ($100k)
-                            </button>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => handleSettleLeg1(novatedReceivables[0].contractId)} className="btn-settle" style={{ padding: '6px 12px', fontSize: '11px' }}>
+                                ⚡ Settle Leg 1 ($100k)
+                              </button>
+                              <button onClick={() => setIsDisputeModalOpen(true)} className="btn-outline-danger" style={{ padding: '6px 10px', fontSize: '11px' }}>
+                                ⚠️ Dispute
+                              </button>
+                            </div>
+                          )}
+
+                          {disputedReceivables.length > 0 && (
+                            role === 'FACTORER' ? (
+                              <button onClick={() => handleResolveDispute(disputedReceivables[0].contractId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '11px', background: 'var(--accent)' }}>
+                                ⚡ Resolve Dispute ($95k)
+                              </button>
+                            ) : (
+                              <span className="mono" style={{ color: '#ef4444', fontSize: '11px', fontWeight: 600 }}>
+                                ⚠️ Under Factorer Review
+                              </span>
+                            )
                           )}
 
                           {role === 'FACTORER' && settledObligations.length > 0 && !settledObligations[0].payload.remitted && (
@@ -927,9 +1107,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                           )}
 
                           {settledObligations.length > 0 && settledObligations[0].payload.remitted && (
-                            <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '11px' }}>
-                              ✓ Full Lifecycle Complete
-                            </span>
+                            (() => {
+                              const isReleased = novationRegistries.length > 0 && !(novationRegistries[0].payload.registeredInvoices || []).includes('INV-2026-001');
+                              if (isReleased) {
+                                return (
+                                  <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '11px' }}>
+                                    ✓ Settled & Released from Registry
+                                  </span>
+                                );
+                              }
+                              if (role === 'BUYER') {
+                                return (
+                                  <button onClick={() => handleReleaseSettledInvoice(settledObligations[0].contractId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }}>
+                                    ⚡ Release from Registry
+                                  </button>
+                                );
+                              }
+                              return (
+                                <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '11px' }}>
+                                  ✓ Full Lifecycle Complete
+                                </span>
+                              );
+                            })()
                           )}
 
                           {role !== 'BUYER' && currentStep === 1 && (
@@ -1222,12 +1421,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                       </button>
                     )}
                     {settledObligations.length > 0 && (
-                      <button 
-                        onClick={() => setXmlModalContent(generatePacs008Xml(settledObligations[0].payload))}
-                        className="btn-audit"
-                      >
-                        Inspect ISO 20022 pacs.008 XML
-                      </button>
+                      <>
+                        <button 
+                          onClick={() => {
+                            setXmlModalType('pacs008');
+                            setXmlModalContent(generatePacs008Xml(settledObligations[0].payload));
+                          }}
+                          className="btn-audit"
+                        >
+                          Inspect pacs.008 (Credit Transfer)
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setXmlModalType('camt054');
+                            setXmlModalContent(generateCamt054Xml(settledObligations[0].payload));
+                          }}
+                          className="btn-audit"
+                        >
+                          Inspect camt.054 (Remittance Advice)
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1288,6 +1501,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: ERP & PEPPOL GATEWAY */}
+          {activeTab === 'erp-gateway' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3 className="serif" style={{ fontSize: '20px', color: 'var(--ink)' }}>
+                      🏢 Enterprise ERP & Peppol E-Invoicing Ingestion Hub
+                    </h3>
+                    <p style={{ color: 'var(--ink-soft)', fontSize: '13px', marginTop: '4px' }}>
+                      Automated parsing for Peppol BIS Billing 3.0 (UBL 2.1 XML) and SAP / Oracle EDI JSON. Mathematically proves line-item checksums before committing to Canton.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      className={`btn-audit ${erpFormat === 'automotive' ? 'active' : ''}`}
+                      onClick={() => {
+                        setErpFormat('automotive');
+                        setErpPayloadText(SAMPLE_ENTERPRISE_INVOICES.automotive.xml);
+                      }}
+                    >
+                      Automotive Peppol UBL
+                    </button>
+                    <button 
+                      className={`btn-audit ${erpFormat === 'aerospace' ? 'active' : ''}`}
+                      onClick={() => {
+                        setErpFormat('aerospace');
+                        setErpPayloadText(SAMPLE_ENTERPRISE_INVOICES.aerospace.json);
+                      }}
+                    >
+                      Aerospace SAP JSON
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginTop: '20px' }}>
+                  {/* Editor area */}
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink-mute)', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                      Raw Payload Input ({erpPayloadText.trim().startsWith('<') ? 'XML UBL 2.1' : 'JSON EDI'})
+                    </label>
+                    <textarea 
+                      value={erpPayloadText}
+                      onChange={e => {
+                        setErpPayloadText(e.target.value);
+                        setErpFormat('custom');
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '340px',
+                        background: 'var(--paper)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        color: 'var(--ink)',
+                        resize: 'vertical',
+                      }}
+                    />
+                  </div>
+
+                  {/* Validation & Live Extraction Card */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{
+                      padding: '16px',
+                      borderRadius: '8px',
+                      background: erpValidationResult?.valid ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                      border: `1px solid ${erpValidationResult?.valid ? '#10b981' : '#ef4444'}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: erpValidationResult?.valid ? '#10b981' : '#ef4444' }}>
+                        <span>{erpValidationResult?.valid ? '✓ Daml Precondition Verified' : '✕ Precondition Violation'}</span>
+                      </div>
+                      <p style={{ fontSize: '12px', marginTop: '6px', color: 'var(--ink-soft)' }}>
+                        {erpValidationResult?.valid ? 'Line items sum strictly matches declared invoice face value. Ready for on-ledger co-signing.' : erpValidationResult?.error}
+                      </p>
+                    </div>
+
+                    {parsedErpInvoice && (
+                      <div style={{ background: 'var(--paper)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--ink-mute)', fontWeight: 600 }}>Parsed Contract Terms</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px', fontSize: '13px' }}>
+                          <div>Invoice ID: <b className="mono">{parsedErpInvoice.invoiceNumber}</b></div>
+                          <div>Total Amount: <b className="mono">${parsedErpInvoice.amount.toLocaleString()} {parsedErpInvoice.currency}</b></div>
+                          <div>Buyer (Debtor): <b>{parsedErpInvoice.buyer}</b></div>
+                          <div>Supplier: <b>{parsedErpInvoice.supplier}</b></div>
+                          <div>Due Date: <span className="mono">{parsedErpInvoice.dueDate.slice(0, 10)}</span></div>
+                          <div>Line Items: <b className="mono">{parsedErpInvoice.lineItems.length} lines</b></div>
+                        </div>
+
+                        {erpDerivedHash && (
+                          <div style={{ marginTop: '14px' }}>
+                            <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--ink-mute)', fontWeight: 600 }}>Derived SHA-256 Commitment Hash</div>
+                            <div className="mono" style={{ fontSize: '11px', color: 'var(--accent)', wordBreak: 'break-all', marginTop: '4px', background: 'var(--canvas)', padding: '8px', borderRadius: '6px', border: '1px solid var(--line)' }}>
+                              {erpDerivedHash}
+                            </div>
+                          </div>
+                        )}
+
+                        <button 
+                          onClick={handleIngestErpInvoice}
+                          disabled={!erpValidationResult?.valid}
+                          className="btn-primary"
+                          style={{ width: '100%', marginTop: '16px', padding: '10px 16px', fontSize: '13px', justifyContent: 'center' }}
+                        >
+                          ⚡ Ingest & Issue CommercialInvoice on Canton
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1366,6 +1694,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
         </div>
       )}
 
+      {/* Commercial Dispute Modal */}
+      {isDisputeModalOpen && (
+        <div className="modal-backdrop open" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-head">
+              <div>
+                <h2 className="serif" style={{ fontSize: '20px', color: '#ef4444' }}>⚠️ Raise Commercial Dispute</h2>
+                <p className="modal-intro">Flag a commercial dispute (defective shipment, price adjustment, or billing error). Locks maturity settlement on-ledger pending factorer review.</p>
+              </div>
+              <button className="close-modal" onClick={() => setIsDisputeModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleRaiseDisputeSubmit}>
+              <label className="form-field">
+                <span>Dispute Reason / Claim Description</span>
+                <input 
+                  required 
+                  value={disputeReasonInput}
+                  onChange={e => setDisputeReasonInput(e.target.value)}
+                  placeholder="e.g. Defective flight microcontroller batch (#404)" 
+                />
+              </label>
+              <label className="form-field">
+                <span>Disputed Amount (USD with-held)</span>
+                <input 
+                  required 
+                  type="number"
+                  min="1"
+                  max="100000"
+                  value={disputeAmountInput}
+                  onChange={e => setDisputeAmountInput(e.target.value)}
+                  placeholder="5000" 
+                />
+              </label>
+              <div className="modal-foot">
+                <button type="button" className="secondary-button" onClick={() => setIsDisputeModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button" style={{ background: '#ef4444', borderColor: '#ef4444' }}>
+                  Commit Dispute to Canton Ledger <span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ISO 20022 XML Preview Modal */}
       {xmlModalContent && (
         <div className="modal-overlay">
@@ -1373,10 +1747,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
             <div className="modal-header">
               <div>
                 <h3 className="serif" style={{ color: 'var(--ink)', fontSize: '20px' }}>
-                  ISO 20022 pacs.008.001.10 XML Export
+                  {xmlModalType === 'pacs008' ? 'ISO 20022 pacs.008.001.10 XML' : 'ISO 20022 camt.054.001.08 XML'}
                 </h3>
                 <span className="mono" style={{ fontSize: '11px', color: 'var(--ink-mute)' }}>
-                  Financial Institution Customer Credit Transfer: Leg 1 Full Settlement
+                  {xmlModalType === 'pacs008' 
+                    ? 'FI Customer Credit Transfer: Leg 1 Buyer Full Settlement ($100k)' 
+                    : 'Bank-to-Customer Credit Notification: Leg 2 Factorer Remittance ($12.5k)'}
                 </span>
               </div>
               <button className="btn-audit" onClick={() => setXmlModalContent(null)}>✕</button>
@@ -1393,9 +1769,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ ledger, onNavigateHome, ad
               {settledObligations.length > 0 && (
                 <button
                   className="btn-primary"
-                  onClick={() => downloadPacs008Xml(settledObligations[0].payload)}
+                  onClick={() => {
+                    if (xmlModalType === 'pacs008') {
+                      downloadPacs008Xml(settledObligations[0].payload);
+                    } else {
+                      downloadCamt054Xml(settledObligations[0].payload);
+                    }
+                  }}
                 >
-                  📥 Download pacs.008 XML
+                  📥 Download {xmlModalType === 'pacs008' ? 'pacs.008' : 'camt.054'} XML
                 </button>
               )}
             </div>

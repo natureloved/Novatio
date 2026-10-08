@@ -3,7 +3,7 @@
 # Runs the same checks every time so regressions are visible.
 set -uo pipefail
 export PATH="$HOME/.daml/bin:$PATH"
-cd /home/ubuntu/Novatio || exit 1
+cd "$(dirname "$0")/.." || exit 1
 PASS=0; FAIL=0
 ok(){ echo "  ✅ $1"; PASS=$((PASS+1)); }
 no(){ echo "  ❌ $1"; FAIL=$((FAIL+1)); }

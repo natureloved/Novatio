@@ -1,12 +1,14 @@
 /**
- * ISO 20022 pacs.008.001.10 Mapper
- * Maps settled Daml obligations into financial institution credit transfer XML messages.
- * Leg 1 settlement: Buyer transfers full face value ($100,000.00) to Factorer.
+ * ISO 20022 Financial Messaging Mapper
+ * - pacs.008.001.10: Financial Institution Customer Credit Transfer (Leg 1: Buyer pays full face value to Factorer)
+ * - camt.054.001.08: Bank To Customer Debit Credit Notification (Leg 2: Factorer remits reserve balance minus fee to Supplier)
  */
 
 export interface SettledObligationData {
   invoiceNumber: string;
   totalAmount: number;
+  reserveAmount?: number;
+  discountFee?: number;
   buyer: string;
   supplier: string;
   factorer: string;
@@ -14,10 +16,10 @@ export interface SettledObligationData {
 }
 
 /**
- * Pure XML generator (platform-independent)
+ * Leg 1: FI-to-FI Customer Credit Transfer (pacs.008.001.10)
  */
 export function generatePacs008Xml(data: SettledObligationData): string {
-  const msgId = `NOVATIO-${Date.now()}`;
+  const msgId = `NOVATIO-PACS008-${Date.now()}`;
   const creationTime = new Date().toISOString();
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -56,7 +58,59 @@ export function generatePacs008Xml(data: SettledObligationData): string {
 }
 
 /**
- * Browser-only download helper
+ * Leg 2: Bank to Customer Credit Notification (camt.054.001.08)
+ * Disbursed upon factorer reserve remittance to supplier.
+ */
+export function generateCamt054Xml(data: SettledObligationData): string {
+  const msgId = `NOVATIO-CAMT054-${Date.now()}`;
+  const creationTime = new Date().toISOString();
+  const reserve = data.reserveAmount ?? (data.totalAmount * 0.15);
+  const fee = data.discountFee ?? 2500;
+  const remittedAmount = Math.max(0, reserve - fee);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>${msgId}</MsgId>
+      <CreDtTm>${creationTime}</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTFCTN-${data.invoiceNumber}</Id>
+      <CreDtTm>${creationTime}</CreDtTm>
+      <Acct>
+        <Id><Othr><Id>${data.supplier}-ESCROW</Id></Othr></Id>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="USD">${remittedAmount.toFixed(2)}</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>${creationTime.slice(0, 10)}</Dt></BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>${data.invoiceNumber}</EndToEndId>
+              <TxId>CANTON-REMIT-${data.invoiceHash.slice(0, 12)}</TxId>
+            </Refs>
+            <Amt Ccy="USD">${remittedAmount.toFixed(2)}</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <RltdPties>
+              <Dbtr><Nm>${data.factorer}</Nm></Dbtr>
+              <Cdtr><Nm>${data.supplier}</Nm></Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Leg 2 Reserve Remittance: Gross Reserve $${reserve.toFixed(2)} minus Discount Fee $${fee.toFixed(2)} = Net $${remittedAmount.toFixed(2)}</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>`;
+}
+
+/**
+ * Browser-only download helpers
  */
 export function downloadPacs008Xml(data: SettledObligationData) {
   const xml = generatePacs008Xml(data);
@@ -65,6 +119,17 @@ export function downloadPacs008Xml(data: SettledObligationData) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `pacs008_${data.invoiceNumber}.xml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function downloadCamt054Xml(data: SettledObligationData) {
+  const xml = generateCamt054Xml(data);
+  const blob = new Blob([xml], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `camt054_remittance_${data.invoiceNumber}.xml`;
   a.click();
   URL.revokeObjectURL(url);
 }

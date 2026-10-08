@@ -176,7 +176,7 @@ testNovatioCompleteLifecycle = script do
 
   -- 18c. Re-registering the released invoice must now SUCCEED, proving the release is real
   -- and not merely a flag. Before this fix, the append-only registry blocked it forever.
-  (registryAfterReRegister, _offer3Cid) <- submit buyer do
+  (registryAfterReRegister, offer3Cid) <- submit buyer do
     exerciseCmd releasedRegistryCid RegisterAndOfferFactoring with
       commercialInvoiceCid = commercialInvoiceCid
       factorer
@@ -187,5 +187,12 @@ testNovatioCompleteLifecycle = script do
   -- 18d. A non-settled obligation cannot release anything: the guard on `remitted` holds.
   submitMustFail buyer do
     exerciseCmd registryAfterReRegister ReleaseSettledInvoice with settledCid = settledCid
+
+  -- 19. Cancel unaccepted offer and release from registry:
+  registryAfterCancel <- submit buyer do
+    exerciseCmd registryAfterReRegister CancelOfferAndRelease with offerCid = offer3Cid
+  Just regPostCancel <- queryContractId @NovationRegistry buyer registryAfterCancel
+  assertMsg "Cancelled offer must release invoice from registry"
+    ("INV-2026-001" `notElem` regPostCancel.registeredInvoices)
 
   return ()

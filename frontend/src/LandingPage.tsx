@@ -19,7 +19,7 @@ const refYieldTenor = (refFee / refAdvance) * 100;                  // 2.9411...
 const refYieldPA = refYieldTenor * (360 / REFERENCE_TENOR);         // 11.764...
 
 const fmtRefPct = (n: number): string => n.toFixed(2);
-const fmtRefPA = (n: number): string => n.toFixed(1);
+const fmtRefPA = (n: number): string => n.toFixed(2);
 
 interface LandingPageProps {
   onLaunchConsole: () => void;
@@ -416,7 +416,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchConsole, addTo
                 <div className="calc-box accent">
                   <div className="lbl">Factorer Net Yield</div>
                   <div className="val mono">{calcYieldTenor.toFixed(2)}%<small>/{modellerTenor}d</small></div>
-                  <div className="delta">+ {fmtUSD(calcFee)} · {calcYieldPA.toFixed(1)}% annualised</div>
+                  <div className="delta">+ {fmtUSD(calcFee)} · {calcYieldPA.toFixed(2)}% annualised</div>
                 </div>
                 <div className="calc-box">
                   <div className="lbl">Discount fee</div>

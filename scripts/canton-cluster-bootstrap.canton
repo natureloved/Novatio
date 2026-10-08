@@ -1,0 +1,61 @@
+// Novatio Multi-Participant Canton Cluster Bootstrap Script
+// Connects 4 independent institutional nodes to the Trade Finance Synchronizer Domain
+// Allocates institutional parties and uploads DAR contracts
+
+println(">>> [Novatio] Initializing Canton Synchronizer Domain...")
+val domain = trade_finance_synchronizer
+
+println(">>> [Novatio] Connecting Participant Nodes to Synchronizer...")
+buyer_participant.domains.connect_local(domain)
+supplier_participant.domains.connect_local(domain)
+factorer_participant.domains.connect_local(domain)
+auditor_participant.domains.connect_local(domain)
+
+println(">>> [Novatio] Synchronizing topology and uploading DAR...")
+val darPath = sys.env.getOrElse("NOVATIO_DAR_PATH", "/daml/novatio-1.0.0.dar")
+
+buyer_participant.dars.upload(darPath)
+supplier_participant.dars.upload(darPath)
+factorer_participant.dars.upload(darPath)
+auditor_participant.dars.upload(darPath)
+
+println(">>> [Novatio] Allocating Institutional Parties on segregated nodes...")
+// Sub-transaction privacy: Each institutional node manages its own cryptographic keys and party state
+val buyerParty = buyer_participant.parties.enable("Buyer", displayName = "Global Motors OEM (Buyer)")
+val supplierParty = supplier_participant.parties.enable("Supplier", displayName = "Apex Components Tier-1 (Supplier)")
+val factorerParty = factorer_participant.parties.enable("Factorer", displayName = "Apex Credit Partners (Factorer)")
+val auditorParty = auditor_participant.parties.enable("Auditor", displayName = "Federal Reserve / FinCEN (Auditor)")
+
+println(s">>> [Novatio] Party Allocation Complete:")
+println(s"    Buyer Party ID:    ${buyerParty.toProtoPrimitive}")
+println(s"    Supplier Party ID: ${supplierParty.toProtoPrimitive}")
+println(s"    Factorer Party ID: ${factorerParty.toProtoPrimitive}")
+println(s"    Auditor Party ID:  ${auditorParty.toProtoPrimitive}")
+
+println(">>> [Novatio] Provisioning Canton User Management Accounts...")
+// User Management claims mapping for JWT authentication (Auth0 / Okta / Azure AD)
+buyer_participant.ledger_api.users.create(
+  userId = "buyer_user",
+  actAs = Set(buyerParty.party),
+  readAs = Set(buyerParty.party)
+)
+
+supplier_participant.ledger_api.users.create(
+  userId = "supplier_user",
+  actAs = Set(supplierParty.party),
+  readAs = Set(supplierParty.party)
+)
+
+factorer_participant.ledger_api.users.create(
+  userId = "factorer_user",
+  actAs = Set(factorerParty.party),
+  readAs = Set(factorerParty.party)
+)
+
+auditor_participant.ledger_api.users.create(
+  userId = "auditor_user",
+  actAs = Set(auditorParty.party),
+  readAs = Set(auditorParty.party, buyerParty.party, supplierParty.party, factorerParty.party)
+)
+
+println(">>> [Novatio] Multi-Participant Cluster Bootstrap Successfully Completed.")

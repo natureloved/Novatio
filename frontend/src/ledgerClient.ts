@@ -907,6 +907,188 @@ export class CantonLedgerClient {
       return finalSettled as any;
     }
 
+    if (choice === 'ReleaseSettledInvoice') {
+      if (actAsParty !== contract.payload.buyer) throw new Error("Authorization error: Only buyer can release settled invoice");
+      const settledCid = (argument as any).settledCid;
+      const settled = this.inMemoryStore.find(c => c.contractId === settledCid && c.templateId.includes('SettledObligation'));
+      if (!settled) throw new Error("Settled obligation not found");
+      if (settled.payload.buyer !== contract.payload.buyer) {
+        throw new Error("Only the buyer's own settled obligation releases its registry entry");
+      }
+      if (!settled.payload.remitted) {
+        throw new Error("Remittance must complete before the invoice can be released");
+      }
+      if (!contract.payload.registeredInvoices.includes(settled.payload.invoiceNumber)) {
+        throw new Error("Invoice is not currently registered");
+      }
+
+      // Consuming choice: archive consumed registry
+      this.inMemoryStore.splice(contractIndex, 1);
+
+      const updatedRegistry: Contract = {
+        contractId: `registry-${this.contractCounter++}`,
+        templateId: 'Novatio:NovationRegistry',
+        signatories: [contract.payload.buyer],
+        observers: [],
+        payload: {
+          buyer: contract.payload.buyer,
+          registeredInvoices: contract.payload.registeredInvoices.filter((inv: string) => inv !== settled.payload.invoiceNumber),
+        },
+      };
+      this.inMemoryStore.push(updatedRegistry);
+
+      this.recordEvent({
+        txId: `tx-release-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actAs: actAsParty,
+        choice,
+        template: 'Novatio:NovationRegistry',
+        status: 'COMMITTED',
+        stakeholders: [contract.payload.buyer],
+        summary: `Buyer released settled invoice ${settled.payload.invoiceNumber} from NovationRegistry. Re-financing or facility restructuring unlocked.`,
+      });
+
+      this.notify();
+      return updatedRegistry as any;
+    }
+
+    if (choice === 'CancelOfferAndRelease') {
+      if (actAsParty !== contract.payload.buyer) throw new Error("Authorization error: Only buyer can cancel offer");
+      const offerCid = (argument as any).offerCid;
+      const offerIndex = this.inMemoryStore.findIndex(c => c.contractId === offerCid && c.templateId.includes('FactoringOffer'));
+      if (offerIndex === -1) throw new Error("Factoring offer not found");
+      const offer = this.inMemoryStore[offerIndex];
+      if (offer.payload.buyer !== contract.payload.buyer) {
+        throw new Error("Only the buyer who issued the offer can cancel it");
+      }
+      if (!contract.payload.registeredInvoices.includes(offer.payload.invoiceNumber)) {
+        throw new Error("Invoice is not in active registry");
+      }
+
+      // Archive offer
+      this.inMemoryStore.splice(offerIndex, 1);
+
+      // Consuming choice on registry: archive old registry, create new
+      const currRegIdx = this.inMemoryStore.findIndex(c => c.contractId === contractId);
+      if (currRegIdx !== -1) this.inMemoryStore.splice(currRegIdx, 1);
+
+      const updatedRegistry: Contract = {
+        contractId: `registry-${this.contractCounter++}`,
+        templateId: 'Novatio:NovationRegistry',
+        signatories: [contract.payload.buyer],
+        observers: [],
+        payload: {
+          buyer: contract.payload.buyer,
+          registeredInvoices: contract.payload.registeredInvoices.filter((inv: string) => inv !== offer.payload.invoiceNumber),
+        },
+      };
+      this.inMemoryStore.push(updatedRegistry);
+
+      this.recordEvent({
+        txId: `tx-cancel-offer-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actAs: actAsParty,
+        choice,
+        template: 'Novatio:NovationRegistry',
+        status: 'COMMITTED',
+        stakeholders: [contract.payload.buyer, offer.payload.supplier, offer.payload.factorer],
+        summary: `Buyer cancelled FactoringOffer for ${offer.payload.invoiceNumber}. Unlocked and released from NovationRegistry.`,
+      });
+
+      this.notify();
+      return updatedRegistry as any;
+    }
+
+    if (choice === 'RaiseDispute') {
+      if (actAsParty !== contract.payload.buyer) throw new Error("Authorization error: Only buyer can raise dispute");
+      const { disputeReason, disputedAmount } = argument as any;
+      if (!disputeReason) throw new Error("Dispute reason required");
+      if (disputedAmount <= 0 || disputedAmount > contract.payload.totalAmount) {
+        throw new Error("Invalid disputed amount");
+      }
+
+      // Consuming choice on NovatedReceivable
+      const currIdx = this.inMemoryStore.findIndex(c => c.contractId === contractId);
+      if (currIdx !== -1) this.inMemoryStore.splice(currIdx, 1);
+
+      const disputed: Contract = {
+        contractId: `dispute-${this.contractCounter++}`,
+        templateId: 'Novatio:DisputedReceivable',
+        signatories: [contract.payload.buyer, contract.payload.factorer],
+        observers: [contract.payload.supplier, contract.payload.auditor],
+        payload: {
+          ...contract.payload,
+          disputedAmount,
+          disputeReason,
+        },
+      };
+      this.inMemoryStore.push(disputed);
+
+      this.recordEvent({
+        txId: `tx-dispute-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actAs: actAsParty,
+        choice,
+        template: 'Novatio:NovatedReceivable',
+        status: 'COMMITTED',
+        stakeholders: [contract.payload.buyer, contract.payload.factorer, contract.payload.supplier, contract.payload.auditor],
+        summary: `Buyer raised commercial dispute on ${contract.payload.invoiceNumber}: "${disputeReason}" ($${disputedAmount.toLocaleString()} disputed). Settlement locked.`,
+      });
+
+      this.notify();
+      return disputed as any;
+    }
+
+    if (choice === 'ResolveDispute') {
+      if (actAsParty !== contract.payload.factorer) throw new Error("Authorization error: Only factorer can resolve dispute");
+      const { resolvedAmount } = argument as any;
+      if (resolvedAmount <= 0 || resolvedAmount > contract.payload.totalAmount) {
+        throw new Error("Invalid resolved amount");
+      }
+
+      // Consuming choice on DisputedReceivable
+      const currIdx = this.inMemoryStore.findIndex(c => c.contractId === contractId);
+      if (currIdx !== -1) this.inMemoryStore.splice(currIdx, 1);
+
+      const advanceAmount = contract.payload.advanceAmount;
+      const reserveAmount = resolvedAmount - advanceAmount;
+
+      const novated: Contract = {
+        contractId: `novated-${this.contractCounter++}`,
+        templateId: 'Novatio:NovatedReceivable',
+        signatories: [contract.payload.buyer, contract.payload.factorer],
+        observers: [contract.payload.supplier, contract.payload.auditor],
+        payload: {
+          buyer: contract.payload.buyer,
+          supplier: contract.payload.supplier,
+          factorer: contract.payload.factorer,
+          invoiceNumber: contract.payload.invoiceNumber,
+          totalAmount: resolvedAmount,
+          advanceAmount,
+          reserveAmount,
+          discountFee: contract.payload.discountFee,
+          dueDate: contract.payload.dueDate,
+          invoiceHash: contract.payload.invoiceHash,
+          auditor: contract.payload.auditor,
+        },
+      };
+      this.inMemoryStore.push(novated);
+
+      this.recordEvent({
+        txId: `tx-resolve-dispute-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actAs: actAsParty,
+        choice,
+        template: 'Novatio:DisputedReceivable',
+        status: 'COMMITTED',
+        stakeholders: [contract.payload.buyer, contract.payload.factorer, contract.payload.supplier, contract.payload.auditor],
+        summary: `Dispute resolved for ${contract.payload.invoiceNumber}. Obligation adjusted to $${resolvedAmount.toLocaleString()} USD and unlocked for settlement.`,
+      });
+
+      this.notify();
+      return novated as any;
+    }
+
     throw new Error(`Choice ${choice} not implemented`);
   }
 

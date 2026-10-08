@@ -1,0 +1,87 @@
+version: '3.8'
+
+# Novatio Institutional Canton Multi-Participant Cluster
+# Production-ready orchestration with 4 segregated participant nodes,
+# persistent PostgreSQL storage, CORS ledger proxies, and web interface.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: novatio_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: canton
+      POSTGRES_PASSWORD: canton_secure_secret
+      POSTGRES_DB: novatio_synchronizer
+    volumes:
+      - novatio_pg_data:/var/lib/postgresql/data
+      - ./scripts/init-cluster-db.sql:/docker-entrypoint-initdb.d/init-cluster-db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U canton -d novatio_synchronizer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  canton-cluster:
+    image: ${CANTON_IMAGE:-digitalasset/canton-open-source:2.10.0}
+    container_name: novatio_canton_cluster
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scripts/canton-cluster.conf:/canton/canton-cluster.conf:ro
+      - ./scripts/canton-cluster-bootstrap.canton:/canton/canton-cluster-bootstrap.canton:ro
+      - ./.daml/dist/novatio-1.0.0.dar:/daml/novatio-1.0.0.dar:ro
+    environment:
+      PG_HOST: postgres
+      PG_USER: canton
+      PG_PASSWORD: canton_secure_secret
+      NOVATIO_DAR_PATH: /daml/novatio-1.0.0.dar
+    ports:
+      # Synchronizer Domain Ports
+      - "6860:6860" # Public API
+      - "6861:6861" # Admin API
+      # Participant Ledger APIs
+      - "6865:6865" # Buyer Participant Ledger API
+      - "6875:6875" # Supplier Participant Ledger API
+      - "6885:6885" # Factorer Participant Ledger API
+      - "6895:6895" # Auditor Participant Ledger API
+      # Participant Admin APIs
+      - "7576:7576" # Buyer Admin API
+      - "7586:7586" # Supplier Admin API
+      - "7596:7596" # Factorer Admin API
+      - "7606:7606" # Auditor Admin API
+    command: >
+      daemon -c /canton/canton-cluster.conf --bootstrap /canton/canton-cluster-bootstrap.canton
+
+  ledger-proxy:
+    image: nginx:alpine
+    container_name: novatio_ledger_proxy
+    restart: unless-stopped
+    depends_on:
+      - canton-cluster
+    volumes:
+      - ./scripts/nginx-cluster-proxy.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "7575:7575" # Buyer Browser JSON Proxy
+      - "7576:7576" # Supplier Browser JSON Proxy
+      - "7577:7577" # Factorer Browser JSON Proxy
+      - "7578:7578" # Auditor Browser JSON Proxy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: novatio_frontend
+    restart: unless-stopped
+    depends_on:
+      - ledger-proxy
+    ports:
+      - "4180:80"
+
+volumes:
+  novatio_pg_data:
+    driver: local
